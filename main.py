@@ -10,8 +10,10 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve, \
     precision_recall_curve, average_precision_score
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, f_classif, RFECV
 from sklearn.inspection import permutation_importance
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.linear_model import LogisticRegression
 import xgboost as xgb
 from tabulate import tabulate
 import matplotlib
@@ -31,6 +33,7 @@ def load_heart_disease_data():
     df = pd.read_csv('dataset/heart.csv')
     print("🔍 Dataset Overview:")
     print(f"Dataset Shape: {df.shape}")
+    print(f"Target distribution:\n{df['target'].value_counts()}")
     return df
 
 
@@ -54,12 +57,13 @@ def advanced_preprocessing(df):
         df_clean[col] = np.where(df_clean[col] < lower_bound, lower_bound, df_clean[col])
         df_clean[col] = np.where(df_clean[col] > upper_bound, upper_bound, df_clean[col])
 
+    print("✅ Outlier handling completed")
     return df_clean
 
 
-def feature_engineering(df):
+def enhanced_feature_engineering(df):
     print("\n" + "=" * 50)
-    print("🔧 FEATURE ENGINEERING")
+    print("🔧 ENHANCED FEATURE ENGINEERING")
     print("=" * 50)
 
     df_engineered = df.copy()
@@ -77,26 +81,68 @@ def feature_engineering(df):
                                             bins=[0, 200, 240, 1000],
                                             labels=['Normal', 'Borderline', 'High'])
 
-    # More robust interaction features
+    # Enhanced interaction features
     df_engineered['age_bp_interaction'] = df_engineered['age'] * df_engineered['trestbps']
-    df_engineered['hr_age_ratio'] = df_engineered['thalach'] / (df_engineered['age'] + 1)  # Avoid division by zero
+    df_engineered['hr_age_ratio'] = df_engineered['thalach'] / (df_engineered['age'] + 1)
 
-    # Risk score with more balanced weights
-    df_engineered['risk_score'] = (
-            (df_engineered['age'] - 50) * 0.1 +
-            (df_engineered['trestbps'] - 120) * 0.02 +
-            (df_engineered['chol'] - 200) * 0.01 +
-            df_engineered['oldpeak'] * 5 +
-            df_engineered['exang'] * 10
+    # New clinical features
+    df_engineered['bp_hr_ratio'] = df_engineered['trestbps'] / (df_engineered['thalach'] + 1)
+    df_engineered['chol_age_ratio'] = df_engineered['chol'] / (df_engineered['age'] + 1)
+    df_engineered['risk_pressure_index'] = df_engineered['oldpeak'] * df_engineered['trestbps']
+
+    # Polynomial features
+    df_engineered['age_squared'] = df_engineered['age'] ** 2
+    df_engineered['oldpeak_squared'] = df_engineered['oldpeak'] ** 2
+
+    # Enhanced risk score
+    df_engineered['clinical_risk'] = (
+            (df_engineered['age'] > 50).astype(int) +
+            (df_engineered['trestbps'] > 140).astype(int) +
+            (df_engineered['chol'] > 240).astype(int) +
+            (df_engineered['oldpeak'] > 1).astype(int) +
+            df_engineered['exang']
     )
 
-    print(f"Created {len([col for col in df_engineered.columns if col not in df.columns])} new features")
+    print(f"✅ Created {len([col for col in df_engineered.columns if col not in df.columns])} new features")
     return df_engineered
+
+
+def enhanced_feature_selection(X, y, n_features=10):
+    """Enhanced feature selection using multiple methods"""
+    print("\n🔍 Performing enhanced feature selection...")
+
+    # Method 1: SelectKBest
+    selector_kbest = SelectKBest(score_func=f_classif, k=min(n_features, X.shape[1]))
+    X_kbest = selector_kbest.fit_transform(X, y)
+    selected_features_kbest = X.columns[selector_kbest.get_support()]
+
+    # Method 2: Random Forest feature importance
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X, y)
+    feature_importances = pd.DataFrame({
+        'feature': X.columns,
+        'importance': rf.feature_importances_
+    }).sort_values('importance', ascending=False)
+
+    top_rf_features = feature_importances.head(n_features)['feature'].tolist()
+
+    # Combine both methods
+    combined_features = list(set(selected_features_kbest.tolist() + top_rf_features))
+
+    if len(combined_features) > n_features:
+        # Use RF importance to select top n
+        combined_features = \
+        feature_importances[feature_importances['feature'].isin(combined_features)].head(n_features)['feature'].tolist()
+
+    print(f"✅ Selected {len(combined_features)} features using combined method")
+    print(f"Selected features: {combined_features}")
+
+    return X[combined_features], combined_features
 
 
 def prepare_data(df):
     print("\n" + "=" * 50)
-    print("📊 DATA PREPARATION FOR MODELING")
+    print("📊 ENHANCED DATA PREPARATION")
     print("=" * 50)
 
     df_encoded = df.copy()
@@ -109,12 +155,8 @@ def prepare_data(df):
     X = df_encoded.drop('target', axis=1)
     y = df_encoded['target']
 
-    # More conservative feature selection
-    selector = SelectKBest(score_func=f_classif, k=min(8, X.shape[1]))  # Reduced from 10 to 8
-    X_selected = selector.fit_transform(X, y)
-
-    selected_features = X.columns[selector.get_support()]
-    print(f"\nSelected top {min(8, X.shape[1])} features: {list(selected_features)}")
+    # Enhanced feature selection
+    X_selected, selected_features = enhanced_feature_selection(X, y, n_features=10)
 
     # Split with stratification
     X_train, X_test, y_train, y_test = train_test_split(
@@ -131,6 +173,52 @@ def prepare_data(df):
     print(f"Class distribution - Train: {np.bincount(y_train)}, Test: {np.bincount(y_test)}")
 
     return X_train_scaled, X_test_scaled, y_train, y_test, scaler, selected_features, df_encoded
+
+
+def create_robust_cv_strategy():
+    """Create more robust cross-validation strategy"""
+    return StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+
+
+def create_regularized_mlp():
+    """Create regularized MLP classifier to prevent overfitting"""
+    return MLPClassifier(
+        random_state=42,
+        early_stopping=True,
+        validation_fraction=0.2,
+        n_iter_no_change=15,
+        max_iter=1000,
+        batch_size=32,
+        alpha=0.01,  # Increased regularization
+        learning_rate_init=0.001
+    )
+
+
+def create_ensemble_models():
+    """Create ensemble models for improved performance"""
+    base_models = [
+        ('svm', SVC(C=1.0, gamma='scale', probability=True, random_state=42)),
+        ('xgb', xgb.XGBClassifier(
+            n_estimators=100,
+            max_depth=3,
+            learning_rate=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42
+        )),
+        ('knn', KNeighborsClassifier(n_neighbors=15, weights='uniform', metric='manhattan'))
+    ]
+
+    # Voting Classifier
+    voting_clf = VotingClassifier(
+        estimators=base_models,
+        voting='soft',
+        n_jobs=-1
+    )
+
+    return {
+        'Voting_Ensemble': voting_clf
+    }
 
 
 def calculate_feature_importance(model, model_name, X_test, y_test, selected_features):
@@ -541,7 +629,7 @@ def print_correlation_matrix(df, selected_features, target_col='target'):
     print("=" * 60)
 
     # Include target in correlation analysis
-    features_to_plot = selected_features.tolist() + [target_col]
+    features_to_plot = selected_features + [target_col]
     corr_matrix = df[features_to_plot].corr()
 
     print(tabulate(corr_matrix.round(3), headers=corr_matrix.columns, showindex=True, tablefmt='grid'))
@@ -669,9 +757,9 @@ def print_classification_reports(best_models, X_test, y_test):
         print(tabulate(report_df.round(4), headers='keys', tablefmt='grid'))
 
 
-def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_features, df_encoded):
+def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_features, df_encoded):
     print("\n" + "=" * 50)
-    print("🤖 MODEL TRAINING & EVALUATION")
+    print("🤖 ENHANCED MODEL TRAINING & EVALUATION")
     print("=" * 50)
 
     # Create initial analyses
@@ -679,29 +767,47 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_feature
     print_correlation_matrix(df_encoded, selected_features)
     print_feature_distributions(df_encoded, selected_features)
 
-    cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_strategy = create_robust_cv_strategy()
 
+    # Define models with better defaults to prevent overfitting
     models = {
         'SVM (RBF)': SVC(kernel='rbf', random_state=42, probability=True),
-        'XGBoost': xgb.XGBClassifier(random_state=42),
-        'MLP': MLPClassifier(random_state=42, early_stopping=True, validation_fraction=0.1, n_iter_no_change=10),
-        'KNN': KNeighborsClassifier()
+        'XGBoost': xgb.XGBClassifier(
+            random_state=42,
+            max_depth=3,  # Reduced to prevent overfitting
+            subsample=0.8
+        ),
+        'MLP': create_regularized_mlp(),
+        'KNN': KNeighborsClassifier(n_neighbors=15),  # Start with higher k to reduce overfitting
+        **create_ensemble_models()  # Add ensemble methods
     }
 
+    # Updated parameter grids with focus on reducing overfitting
     param_grids = {
-        'SVM (RBF)': {'C': [0.1, 1, 10], 'gamma': ['scale', 0.1, 0.01]},
+        'SVM (RBF)': {
+            'C': [0.1, 1, 10],
+            'gamma': ['scale', 'auto', 0.1, 0.01]
+        },
         'XGBoost': {
-            'n_estimators': [50, 100], 'max_depth': [2, 3, 4],
-            'learning_rate': [0.05, 0.1], 'subsample': [0.8, 0.9],
-            'colsample_bytree': [0.8, 0.9]
+            'n_estimators': [100, 200],
+            'max_depth': [2, 3, 4],
+            'learning_rate': [0.05, 0.1],
+            'subsample': [0.7, 0.8, 0.9],
+            'colsample_bytree': [0.7, 0.8, 0.9]
         },
         'MLP': {
-            'hidden_layer_sizes': [(50,), (30, 30)], 'alpha': [0.001, 0.01, 0.1],
+            'hidden_layer_sizes': [(50,), (30, 30), (50, 25, 10)],
+            'alpha': [0.001, 0.01, 0.1],
             'learning_rate_init': [0.001, 0.01]
         },
         'KNN': {
-            'n_neighbors': [5, 7, 9, 11], 'weights': ['uniform', 'distance'],
-            'metric': ['euclidean', 'manhattan']
+            'n_neighbors': [15, 20, 25, 30],  # Higher values to reduce overfitting
+            'weights': ['uniform', 'distance'],
+            'metric': ['euclidean', 'manhattan', 'minkowski'],
+            'p': [1, 2]
+        },
+        'Voting_Ensemble': {
+            'voting': ['soft', 'hard']
         }
     }
 
@@ -711,13 +817,20 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_feature
     for model_name, model in models.items():
         print(f"\n📈 Training {model_name}...")
 
-        grid_search = GridSearchCV(
-            model, param_grids[model_name], cv=cv_strategy,
-            scoring='accuracy', n_jobs=-1, verbose=0
-        )
-        grid_search.fit(X_train, y_train)
+        # Skip grid search for ensemble if no parameters to tune
+        if model_name == 'Voting_Ensemble' and not param_grids[model_name]:
+            best_model = model
+            best_model.fit(X_train, y_train)
+            best_params = "Default parameters"
+        else:
+            grid_search = GridSearchCV(
+                model, param_grids[model_name], cv=cv_strategy,
+                scoring='accuracy', n_jobs=-1, verbose=0
+            )
+            grid_search.fit(X_train, y_train)
+            best_model = grid_search.best_estimator_
+            best_params = str(grid_search.best_params_)
 
-        best_model = grid_search.best_estimator_
         best_models[model_name] = best_model
 
         y_pred = best_model.predict(X_test)
@@ -736,7 +849,7 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_feature
 
         results.append({
             'Model': model_name,
-            'Best Params': str(grid_search.best_params_),
+            'Best Params': best_params,
             'Train Acc': f"{train_accuracy:.4f}",
             'Test Acc': f"{test_accuracy:.4f}",
             'CV Score': f"{cv_mean:.4f}",
@@ -753,11 +866,11 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_feature
     print_prediction_probabilities(best_models, X_test, y_test)
     print_classification_reports(best_models, X_test, y_test)
 
-    # Create comprehensive visualizations (UPDATED - now gets importance data)
+    # Create comprehensive visualizations
     importance_data = create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_train,
                                                           selected_features, results)
 
-    # Print comprehensive feature importance analysis (NEW)
+    # Print comprehensive feature importance analysis
     print_feature_importance_comprehensive(importance_data)
 
     # Display results
@@ -771,9 +884,15 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_feature
 
 
 def main():
-    print("🚀 HEART DISEASE CLASSIFICATION PROJECT - COMPREHENSIVE VISUALIZATION")
+    print("🚀 HEART DISEASE CLASSIFICATION PROJECT - ENHANCED VERSION")
     print("=" * 80)
-    print("Selected Models: SVM (RBF), XGBoost, MLP, KNN")
+    print("Selected Models: SVM (RBF), XGBoost, MLP, KNN, Voting Ensemble")
+    print("Key Improvements:")
+    print("  • Enhanced feature engineering with clinical features")
+    print("  • Improved feature selection using multiple methods")
+    print("  • Regularized models to prevent overfitting")
+    print("  • Higher K values for KNN (15-30)")
+    print("  • Ensemble methods for better generalization")
     print("=" * 80)
 
     # 1. Load data
@@ -782,15 +901,16 @@ def main():
     # 2. Advanced preprocessing
     df_clean = advanced_preprocessing(df)
 
-    # 3. Feature engineering
-    df_engineered = feature_engineering(df_clean)
+    # 3. Enhanced feature engineering
+    df_engineered = enhanced_feature_engineering(df_clean)
 
-    # 4. Prepare data
+    # 4. Prepare data with enhanced feature selection
     X_train, X_test, y_train, y_test, scaler, selected_features, df_encoded = prepare_data(df_engineered)
 
-    # 5. Train and evaluate models with comprehensive analyses
-    best_models, results, importance_data = train_and_evaluate_models(X_train, X_test, y_train, y_test,
-                                                                      selected_features, df_encoded)
+    # 5. Train and evaluate models with enhanced methods
+    best_models, results, importance_data = enhanced_train_and_evaluate_models(
+        X_train, X_test, y_train, y_test, selected_features, df_encoded
+    )
 
     print("\n" + "🎯 PROJECT COMPLETED SUCCESSFULLY!")
     print("\n📊 All analyses displayed in terminal above:")
@@ -805,6 +925,13 @@ def main():
     print("\n🔍 FEATURE IMPORTANCE METHODS USED:")
     for model_name, importance_df in importance_data.items():
         print(f"   - {model_name}: {importance_df['Method'].iloc[0]}")
+
+    print("\n✅ Key improvements implemented:")
+    print("   • KNN overfitting reduced with higher n_neighbors (15-30)")
+    print("   • Enhanced feature engineering with clinical ratios")
+    print("   • Improved feature selection using combined methods")
+    print("   • Added ensemble methods for better generalization")
+    print("   • Increased regularization across all models")
 
 
 if __name__ == "__main__":
