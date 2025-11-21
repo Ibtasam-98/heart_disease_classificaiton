@@ -24,6 +24,22 @@ import seaborn as sns
 
 warnings.filterwarnings('ignore')
 
+# Set HD style for research papers with Times New Roman
+plt.rcParams.update({
+    'font.family': 'Times New Roman',
+    'font.size': 12,
+    'axes.titlesize': 14,
+    'axes.labelsize': 12,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.titlesize': 16,
+    'figure.dpi': 300,
+    'savefig.dpi': 300,
+    'savefig.bbox': 'tight',
+    'savefig.pad_inches': 0.1
+})
+
 # Set style for better plots
 plt.style.use('default')
 sns.set_palette("husl")
@@ -132,7 +148,8 @@ def enhanced_feature_selection(X, y, n_features=10):
     if len(combined_features) > n_features:
         # Use RF importance to select top n
         combined_features = \
-        feature_importances[feature_importances['feature'].isin(combined_features)].head(n_features)['feature'].tolist()
+            feature_importances[feature_importances['feature'].isin(combined_features)].head(n_features)[
+                'feature'].tolist()
 
     print(f"✅ Selected {len(combined_features)} features using combined method")
     print(f"Selected features: {combined_features}")
@@ -260,52 +277,69 @@ def calculate_feature_importance(model, model_name, X_test, y_test, selected_fea
     return feature_importance_df
 
 
-def create_feature_importance_comprehensive(best_models, X_test, y_test, selected_features):
-    """Create comprehensive feature importance comparison for all models"""
-    print(f"\n🔍 Creating Comprehensive Feature Importance Analysis...")
+def create_comprehensive_feature_importance_single_plot(importance_data,
+                                                        filename='comprehensive_feature_importance_hd.png'):
+    """Create a single comprehensive feature importance plot with different colors for each model"""
+    print(f"\n🎨 Creating Comprehensive Feature Importance Visualization (HD)...")
 
-    # Calculate feature importance for all models
-    importance_data = {}
-    for model_name, model in best_models.items():
-        importance_data[model_name] = calculate_feature_importance(
-            model, model_name, X_test, y_test, selected_features
-        )
+    plt.figure(figsize=(14, 10))
 
-    # Create visualization
+    # Define distinct colors for each model
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
+
+    # Get all unique features across all models
+    all_features = set()
+    for importance_df in importance_data.values():
+        all_features.update(importance_df['Feature'].tolist())
+
+    # Create a matrix for plotting
+    features_list = sorted(list(all_features))
+    n_features = len(features_list)
     n_models = len(importance_data)
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    axes = axes.ravel()
 
+    # Set up the plot
+    bar_width = 0.15
+    index = np.arange(n_features)
+
+    # Plot bars for each model
     for idx, (model_name, importance_df) in enumerate(importance_data.items()):
-        if idx >= len(axes):
-            break
+        # Create a mapping from feature to importance for this model
+        feature_importance_map = dict(zip(importance_df['Feature'], importance_df['Importance']))
+        importances = [feature_importance_map.get(feature, 0) for feature in features_list]
 
-        # Plot horizontal bar chart
-        ax = axes[idx]
-        bars = ax.barh(importance_df['Feature'], importance_df['Importance'],
-                       color=plt.cm.viridis(np.linspace(0, 1, len(importance_df))))
+        plt.bar(index + idx * bar_width, importances, bar_width,
+                label=model_name, color=model_colors.get(model_name, f'C{idx}'),
+                alpha=0.8, edgecolor='black', linewidth=0.5)
 
-        ax.set_title(f'{model_name}\n({importance_df["Method"].iloc[0]})',
-                     fontweight='bold', fontsize=12)
-        ax.set_xlabel('Importance Score')
+    # Customize the plot for research paper
+    plt.xlabel('Features', fontweight='bold', fontsize=14)
+    plt.ylabel('Importance Score', fontweight='bold', fontsize=14)
+    plt.title('Comprehensive Feature Importance Analysis\nAcross All Machine Learning Models',
+              fontweight='bold', fontsize=16, pad=20)
+    plt.xticks(index + bar_width * (n_models - 1) / 2, features_list, rotation=45, ha='right')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True, fancybox=True, shadow=True)
+    plt.grid(True, alpha=0.3, axis='y')
 
-        # Add value labels on bars
-        for bar, importance in zip(bars, importance_df['Importance']):
-            width = bar.get_width()
-            ax.text(width + 0.001, bar.get_y() + bar.get_height() / 2,
-                    f'{importance:.3f}', ha='left', va='center', fontsize=9)
-
-    # Hide unused subplots
-    for idx in range(n_models, len(axes)):
-        axes[idx].set_visible(False)
+    # Add value labels on bars for the highest importance values
+    for idx, (model_name, importance_df) in enumerate(importance_data.items()):
+        feature_importance_map = dict(zip(importance_df['Feature'], importance_df['Importance']))
+        for j, feature in enumerate(features_list):
+            importance = feature_importance_map.get(feature, 0)
+            if importance > 0.05:  # Only label significant importances
+                plt.text(j + idx * bar_width, importance + 0.01, f'{importance:.3f}',
+                         ha='center', va='bottom', fontsize=8, rotation=90)
 
     plt.tight_layout()
-    plt.savefig('comprehensive_feature_importance.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print("✅ Comprehensive feature importance saved as 'comprehensive_feature_importance.png'")
-
-    return importance_data
+    print(f"✅ HD comprehensive feature importance saved as '{filename}'")
 
 
 def print_feature_importance_comprehensive(importance_data):
@@ -320,11 +354,20 @@ def print_feature_importance_comprehensive(importance_data):
                        headers='keys', tablefmt='grid', showindex=False))
 
 
-def create_roc_auc_visualization(best_models, X_test, y_test, filename='roc_auc_comparison.png'):
-    """Create and save ROC AUC visualization for all models"""
-    print(f"\n📊 Creating ROC AUC Visualization...")
+def create_roc_auc_visualization(best_models, X_test, y_test, filename='roc_auc_comparison_hd.png'):
+    """Create and save ROC AUC visualization for all models in HD"""
+    print(f"\n📊 Creating ROC AUC Visualization (HD)...")
 
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(12, 10))
+
+    # Define colors for different models
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
 
     # Plot ROC curve for each model
     for model_name, model in best_models.items():
@@ -333,51 +376,57 @@ def create_roc_auc_visualization(best_models, X_test, y_test, filename='roc_auc_
             fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
             auc_score = roc_auc_score(y_test, y_pred_proba)
 
-            plt.plot(fpr, tpr, linewidth=2.5,
+            plt.plot(fpr, tpr, linewidth=3,
+                     color=model_colors.get(model_name, 'black'),
                      label=f'{model_name} (AUC = {auc_score:.3f})')
 
     # Plot diagonal line (random classifier)
-    plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Random Classifier (AUC = 0.500)')
+    plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2, label='Random Classifier (AUC = 0.500)')
 
-    # Customize the plot
+    # Customize the plot for research paper
     plt.xlim([-0.01, 1.01])
     plt.ylim([-0.01, 1.01])
-    plt.xlabel('False Positive Rate', fontsize=12, fontweight='bold')
-    plt.ylabel('True Positive Rate', fontsize=12, fontweight='bold')
-    plt.title('ROC Curves - Model Comparison', fontsize=14, fontweight='bold')
-    plt.legend(loc='lower right', fontsize=10)
+    plt.xlabel('False Positive Rate', fontsize=14, fontweight='bold')
+    plt.ylabel('True Positive Rate', fontsize=14, fontweight='bold')
+    plt.title('Receiver Operating Characteristic (ROC) Curves\nModel Comparison',
+              fontsize=16, fontweight='bold', pad=20)
+    plt.legend(loc='lower right', fontsize=12, frameon=True, fancybox=True, shadow=True)
     plt.grid(True, alpha=0.3)
 
     # Add performance annotations
-    plt.text(0.6, 0.05, '🔍 Better Models → Top Left',
-             fontsize=10, style='italic', bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+    plt.text(0.6, 0.05, 'Better Models → Top Left',
+             fontsize=12, style='italic', bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
 
-    # Save the plot
+    # Save the plot in HD
     plt.tight_layout()
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print(f"✅ ROC AUC visualization saved as '{filename}'")
+    print(f"✅ HD ROC AUC visualization saved as '{filename}'")
 
 
-def create_probability_distributions_combined(best_models, X_test, y_test):
-    """Create combined probability distribution plot for all models in one graph"""
-    print(f"\n📊 Creating Combined Probability Distributions Visualization...")
-
-    plt.figure(figsize=(14, 10))
+def create_probability_distributions_combined(best_models, X_test, y_test,
+                                              filename='probability_distributions_combined_hd.png'):
+    """Create combined probability distribution plot for all models in one graph in HD"""
+    print(f"\n📊 Creating Combined Probability Distributions Visualization (HD)...")
 
     # Define colors for different models
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
 
-    # Create subplots: left for No Disease, right for Disease
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
 
-    for idx, (model_name, model) in enumerate(best_models.items()):
+    for model_name, model in best_models.items():
         if not hasattr(model, 'predict_proba'):
             continue
 
         y_pred_proba = model.predict_proba(X_test)[:, 1]
-        color = colors[idx % len(colors)]
+        color = model_colors.get(model_name, 'black')
 
         # Plot for No Disease class (y_test == 0)
         mask_no_disease = (y_test == 0)
@@ -389,73 +438,80 @@ def create_probability_distributions_combined(best_models, X_test, y_test):
 
         # Plot histograms with KDE
         ax1.hist(probs_no_disease, bins=20, alpha=0.6, color=color,
-                 label=f'{model_name}', density=True, histtype='stepfilled')
+                 label=f'{model_name}', density=True, histtype='stepfilled', edgecolor='black', linewidth=0.5)
         ax2.hist(probs_disease, bins=20, alpha=0.6, color=color,
-                 label=f'{model_name}', density=True, histtype='stepfilled')
+                 label=f'{model_name}', density=True, histtype='stepfilled', edgecolor='black', linewidth=0.5)
 
     # Customize No Disease subplot
-    ax1.set_xlabel('Predicted Probability', fontweight='bold')
-    ax1.set_ylabel('Density', fontweight='bold')
+    ax1.set_xlabel('Predicted Probability', fontweight='bold', fontsize=12)
+    ax1.set_ylabel('Density', fontweight='bold', fontsize=12)
     ax1.set_title('Probability Distribution - No Disease Cases', fontweight='bold', fontsize=14)
-    ax1.legend()
+    ax1.legend(frameon=True, fancybox=True, shadow=True)
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(0, 1)
 
     # Customize Disease subplot
-    ax2.set_xlabel('Predicted Probability', fontweight='bold')
-    ax2.set_ylabel('Density', fontweight='bold')
+    ax2.set_xlabel('Predicted Probability', fontweight='bold', fontsize=12)
+    ax2.set_ylabel('Density', fontweight='bold', fontsize=12)
     ax2.set_title('Probability Distribution - Disease Cases', fontweight='bold', fontsize=14)
-    ax2.legend()
+    ax2.legend(frameon=True, fancybox=True, shadow=True)
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim(0, 1)
 
     plt.tight_layout()
-    plt.savefig('probability_distributions_combined.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print("✅ Combined probability distributions saved as 'probability_distributions_combined.png'")
+    print(f"✅ HD combined probability distributions saved as '{filename}'")
 
 
-def create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features):
-    """Create a comprehensive visualization with all models and metrics"""
-    print(f"\n📊 Creating Comprehensive Model Comparison Dashboard...")
+def create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features,
+                                          filename='comprehensive_model_comparison_hd.png'):
+    """Create a comprehensive visualization with all models and metrics in HD"""
+    print(f"\n📊 Creating Comprehensive Model Comparison Dashboard (HD)...")
 
     # Create a 2x2 subplot for comprehensive comparison
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Comprehensive Model Evaluation Dashboard', fontsize=16, fontweight='bold')
+    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+    fig.suptitle('Comprehensive Model Evaluation Dashboard', fontsize=18, fontweight='bold')
 
     # Colors for different models
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
 
     # 1. ROC Curves (Top Left)
-    for idx, (model_name, model) in enumerate(best_models.items()):
+    for model_name, model in best_models.items():
         if hasattr(model, 'predict_proba'):
             y_pred_proba = model.predict_proba(X_test)[:, 1]
             fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
             auc_score = roc_auc_score(y_test, y_pred_proba)
-            axes[0, 0].plot(fpr, tpr, linewidth=2.5, color=colors[idx],
+            axes[0, 0].plot(fpr, tpr, linewidth=3, color=model_colors[model_name],
                             label=f'{model_name} (AUC = {auc_score:.3f})')
 
-    axes[0, 0].plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Random Classifier')
-    axes[0, 0].set_xlabel('False Positive Rate', fontweight='bold')
-    axes[0, 0].set_ylabel('True Positive Rate', fontweight='bold')
-    axes[0, 0].set_title('ROC Curves', fontweight='bold')
-    axes[0, 0].legend()
+    axes[0, 0].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=2, label='Random Classifier')
+    axes[0, 0].set_xlabel('False Positive Rate', fontweight='bold', fontsize=12)
+    axes[0, 0].set_ylabel('True Positive Rate', fontweight='bold', fontsize=12)
+    axes[0, 0].set_title('ROC Curves', fontweight='bold', fontsize=14)
+    axes[0, 0].legend(frameon=True, fancybox=True, shadow=True)
     axes[0, 0].grid(True, alpha=0.3)
 
     # 2. Precision-Recall Curves (Top Right)
-    for idx, (model_name, model) in enumerate(best_models.items()):
+    for model_name, model in best_models.items():
         if hasattr(model, 'predict_proba'):
             y_pred_proba = model.predict_proba(X_test)[:, 1]
             precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
             avg_precision = average_precision_score(y_test, y_pred_proba)
-            axes[0, 1].plot(recall, precision, linewidth=2.5, color=colors[idx],
+            axes[0, 1].plot(recall, precision, linewidth=3, color=model_colors[model_name],
                             label=f'{model_name} (AP = {avg_precision:.3f})')
 
-    axes[0, 1].set_xlabel('Recall (Sensitivity)', fontweight='bold')
-    axes[0, 1].set_ylabel('Precision', fontweight='bold')
-    axes[0, 1].set_title('Precision-Recall Curves', fontweight='bold')
-    axes[0, 1].legend()
+    axes[0, 1].set_xlabel('Recall (Sensitivity)', fontweight='bold', fontsize=12)
+    axes[0, 1].set_ylabel('Precision', fontweight='bold', fontsize=12)
+    axes[0, 1].set_title('Precision-Recall Curves', fontweight='bold', fontsize=14)
+    axes[0, 1].legend(frameon=True, fancybox=True, shadow=True)
     axes[0, 1].grid(True, alpha=0.3)
 
     # 3. Performance Metrics Bar Chart (Bottom Left)
@@ -467,53 +523,68 @@ def create_comprehensive_model_comparison(best_models, X_test, y_test, results, 
     x = np.arange(len(model_names))
     width = 0.25
 
-    axes[1, 0].bar(x - width, test_accuracies, width, label='Test Accuracy', alpha=0.8, color='skyblue')
-    axes[1, 0].bar(x, auc_scores, width, label='AUC Score', alpha=0.8, color='lightcoral')
-    axes[1, 0].bar(x + width, cv_scores, width, label='CV Score', alpha=0.8, color='lightgreen')
+    # Use model colors for bars
+    colors = [model_colors.get(name, 'gray') for name in model_names]
 
-    axes[1, 0].set_xlabel('Models', fontweight='bold')
-    axes[1, 0].set_ylabel('Scores', fontweight='bold')
-    axes[1, 0].set_title('Performance Metrics Comparison', fontweight='bold')
+    bars1 = axes[1, 0].bar(x - width, test_accuracies, width, label='Test Accuracy', alpha=0.8,
+                           color=[model_colors.get(name, 'skyblue') for name in model_names])
+    bars2 = axes[1, 0].bar(x, auc_scores, width, label='AUC Score', alpha=0.8,
+                           color=[model_colors.get(name, 'lightcoral') for name in model_names])
+    bars3 = axes[1, 0].bar(x + width, cv_scores, width, label='CV Score', alpha=0.8,
+                           color=[model_colors.get(name, 'lightgreen') for name in model_names])
+
+    axes[1, 0].set_xlabel('Models', fontweight='bold', fontsize=12)
+    axes[1, 0].set_ylabel('Scores', fontweight='bold', fontsize=12)
+    axes[1, 0].set_title('Performance Metrics Comparison', fontweight='bold', fontsize=14)
     axes[1, 0].set_xticks(x)
     axes[1, 0].set_xticklabels(model_names, rotation=45, ha='right')
-    axes[1, 0].legend()
+    axes[1, 0].legend(frameon=True, fancybox=True, shadow=True)
     axes[1, 0].grid(True, alpha=0.3)
 
     # Add value labels
     for i, (acc, auc, cv) in enumerate(zip(test_accuracies, auc_scores, cv_scores)):
-        axes[1, 0].text(i - width, acc + 0.01, f'{acc:.3f}', ha='center', va='bottom', fontsize=8)
-        axes[1, 0].text(i, auc + 0.01, f'{auc:.3f}', ha='center', va='bottom', fontsize=8)
-        axes[1, 0].text(i + width, cv + 0.01, f'{cv:.3f}', ha='center', va='bottom', fontsize=8)
+        axes[1, 0].text(i - width, acc + 0.01, f'{acc:.3f}', ha='center', va='bottom', fontsize=9)
+        axes[1, 0].text(i, auc + 0.01, f'{auc:.3f}', ha='center', va='bottom', fontsize=9)
+        axes[1, 0].text(i + width, cv + 0.01, f'{cv:.3f}', ha='center', va='bottom', fontsize=9)
 
     # 4. Calibration Curves (Bottom Right)
-    for idx, (model_name, model) in enumerate(best_models.items()):
+    for model_name, model in best_models.items():
         if hasattr(model, 'predict_proba'):
             y_pred_proba = model.predict_proba(X_test)[:, 1]
             fraction_of_positives, mean_predicted_value = calibration_curve(y_test, y_pred_proba, n_bins=10)
-            axes[1, 1].plot(mean_predicted_value, fraction_of_positives, 's-', color=colors[idx],
-                            label=f'{model_name}')
+            axes[1, 1].plot(mean_predicted_value, fraction_of_positives, 's-', linewidth=2,
+                            color=model_colors[model_name], label=f'{model_name}')
 
-    axes[1, 1].plot([0, 1], [0, 1], 'k:', label='Perfectly calibrated')
-    axes[1, 1].set_xlabel('Mean Predicted Probability', fontweight='bold')
-    axes[1, 1].set_ylabel('Fraction of Positives', fontweight='bold')
-    axes[1, 1].set_title('Calibration Curves', fontweight='bold')
-    axes[1, 1].legend()
+    axes[1, 1].plot([0, 1], [0, 1], 'k:', linewidth=2, label='Perfectly calibrated')
+    axes[1, 1].set_xlabel('Mean Predicted Probability', fontweight='bold', fontsize=12)
+    axes[1, 1].set_ylabel('Fraction of Positives', fontweight='bold', fontsize=12)
+    axes[1, 1].set_title('Calibration Curves', fontweight='bold', fontsize=14)
+    axes[1, 1].legend(frameon=True, fancybox=True, shadow=True)
     axes[1, 1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('comprehensive_model_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print("✅ Comprehensive model comparison saved as 'comprehensive_model_comparison.png'")
+    print(f"✅ HD comprehensive model comparison saved as '{filename}'")
 
 
-def create_learning_curves_visualization(best_models, X_train, y_train):
-    """Create learning curves visualization for all models"""
-    print(f"\n📈 Creating Learning Curves Visualization...")
+def create_learning_curves_visualization(best_models, X_train, y_train, filename='learning_curves_comparison_hd.png'):
+    """Create learning curves visualization for all models in HD"""
+    print(f"\n📈 Creating Learning Curves Visualization (HD)...")
 
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(14, 10))
 
-    for idx, (model_name, model) in enumerate(best_models.items()):
+    # Define colors for different models
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
+
+    for model_name, model in best_models.items():
         train_sizes, train_scores, test_scores = learning_curve(
             model, X_train, y_train, cv=5, n_jobs=-1,
             train_sizes=np.linspace(0.1, 1.0, 10),
@@ -525,39 +596,49 @@ def create_learning_curves_visualization(best_models, X_train, y_train):
         test_scores_mean = np.mean(test_scores, axis=1)
         test_scores_std = np.std(test_scores, axis=1)
 
-        plt.plot(train_sizes, train_scores_mean, 'o-', color=plt.cm.Set1(idx / len(best_models)),
+        color = model_colors.get(model_name, 'black')
+
+        plt.plot(train_sizes, train_scores_mean, 'o-', linewidth=2.5, color=color,
                  label=f'{model_name} - Training')
-        plt.plot(train_sizes, test_scores_mean, 'o--', color=plt.cm.Set1(idx / len(best_models)),
+        plt.plot(train_sizes, test_scores_mean, 'o--', linewidth=2.5, color=color,
                  label=f'{model_name} - Cross-validation')
 
         # Fill between standard deviation areas
         plt.fill_between(train_sizes, train_scores_mean - train_scores_std,
-                         train_scores_mean + train_scores_std, alpha=0.1,
-                         color=plt.cm.Set1(idx / len(best_models)))
+                         train_scores_mean + train_scores_std, alpha=0.1, color=color)
         plt.fill_between(train_sizes, test_scores_mean - test_scores_std,
-                         test_scores_mean + test_scores_std, alpha=0.1,
-                         color=plt.cm.Set1(idx / len(best_models)))
+                         test_scores_mean + test_scores_std, alpha=0.1, color=color)
 
-    plt.xlabel('Training Examples', fontweight='bold')
-    plt.ylabel('Accuracy Score', fontweight='bold')
-    plt.title('Learning Curves - All Models', fontweight='bold')
-    plt.legend(loc='best')
+    plt.xlabel('Training Examples', fontweight='bold', fontsize=12)
+    plt.ylabel('Accuracy Score', fontweight='bold', fontsize=12)
+    plt.title('Learning Curves - All Models', fontweight='bold', fontsize=14)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True, fancybox=True, shadow=True)
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('learning_curves_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print("✅ Learning curves comparison saved as 'learning_curves_comparison.png'")
+    print(f"✅ HD learning curves comparison saved as '{filename}'")
 
 
-def create_confusion_matrices_visualization(best_models, X_test, y_test):
-    """Create confusion matrices visualization for all models"""
-    print(f"\n🎯 Creating Confusion Matrices Visualization...")
+def create_confusion_matrices_visualization(best_models, X_test, y_test,
+                                            filename='confusion_matrices_comparison_hd.png'):
+    """Create confusion matrices visualization for all models in HD"""
+    print(f"\n🎯 Creating Confusion Matrices Visualization (HD)...")
 
     n_models = len(best_models)
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
     axes = axes.ravel()
+
+    # Define colors for different models
+    model_colors = {
+        'SVM (RBF)': 'Blues',
+        'XGBoost': 'Oranges',
+        'MLP': 'Greens',
+        'KNN': 'Reds',
+        'Voting_Ensemble': 'Purples'
+    }
 
     for idx, (model_name, model) in enumerate(best_models.items()):
         if idx >= len(axes):
@@ -567,39 +648,40 @@ def create_confusion_matrices_visualization(best_models, X_test, y_test):
         cm = confusion_matrix(y_test, y_pred)
         accuracy = accuracy_score(y_test, y_pred)
 
-        # Plot confusion matrix
-        im = axes[idx].imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-        axes[idx].set_title(f'{model_name}\n(Accuracy: {accuracy:.3f})', fontweight='bold')
+        # Plot confusion matrix with model-specific colormap
+        cmap = model_colors.get(model_name, 'Blues')
+        im = axes[idx].imshow(cm, interpolation='nearest', cmap=cmap)
+        axes[idx].set_title(f'{model_name}\n(Accuracy: {accuracy:.3f})', fontweight='bold', fontsize=12)
 
         # Add text annotations
         thresh = cm.max() / 2.
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
                 axes[idx].text(j, i, format(cm[i, j], 'd'),
-                               ha="center", va="center",
+                               ha="center", va="center", fontweight='bold',
                                color="white" if cm[i, j] > thresh else "black")
 
         axes[idx].set_xticks([0, 1])
         axes[idx].set_yticks([0, 1])
-        axes[idx].set_xticklabels(['Pred No\nDisease', 'Pred\nDisease'])
-        axes[idx].set_yticklabels(['True No\nDisease', 'True\nDisease'])
-        axes[idx].set_ylabel('True Label')
-        axes[idx].set_xlabel('Predicted Label')
+        axes[idx].set_xticklabels(['Pred No\nDisease', 'Pred\nDisease'], fontsize=10)
+        axes[idx].set_yticklabels(['True No\nDisease', 'True\nDisease'], fontsize=10)
+        axes[idx].set_ylabel('True Label', fontweight='bold', fontsize=10)
+        axes[idx].set_xlabel('Predicted Label', fontweight='bold', fontsize=10)
 
     # Hide unused subplots
     for idx in range(n_models, len(axes)):
         axes[idx].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig('confusion_matrices_comparison.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print("✅ Confusion matrices comparison saved as 'confusion_matrices_comparison.png'")
+    print(f"✅ HD confusion matrices comparison saved as '{filename}'")
 
 
 def create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_train, selected_features, results):
-    """Create comprehensive visualizations including ROC AUC"""
-    print(f"\n📊 Creating All Comprehensive Visualizations...")
+    """Create comprehensive visualizations including ROC AUC in HD"""
+    print(f"\n📊 Creating All Comprehensive Visualizations (HD)...")
 
     # 1. Main comprehensive comparison (4-in-1)
     create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features)
@@ -608,7 +690,7 @@ def create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_
     create_learning_curves_visualization(best_models, X_train, y_train)
 
     # 3. Feature importance (UPDATED - now returns importance data)
-    importance_data = create_feature_importance_comprehensive(best_models, X_test, y_test, selected_features)
+    importance_data = create_feature_importance_comprehensive_single(best_models, X_test, y_test, selected_features)
 
     # 4. Confusion matrices
     create_confusion_matrices_visualization(best_models, X_test, y_test)
@@ -617,44 +699,83 @@ def create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_
     create_probability_distributions_combined(best_models, X_test, y_test)
 
     # 6. ROC AUC
-    create_roc_auc_visualization(best_models, X_test, y_test, 'roc_auc_comparison.png')
+    create_roc_auc_visualization(best_models, X_test, y_test)
+
+    return importance_data
+
+
+def create_feature_importance_comprehensive_single(best_models, X_test, y_test, selected_features):
+    """Create comprehensive feature importance comparison for all models and return data"""
+    print(f"\n🔍 Creating Comprehensive Feature Importance Analysis (HD)...")
+
+    # Calculate feature importance for all models
+    importance_data = {}
+    for model_name, model in best_models.items():
+        importance_data[model_name] = calculate_feature_importance(
+            model, model_name, X_test, y_test, selected_features
+        )
+
+    # Create the single comprehensive visualization
+    create_comprehensive_feature_importance_single_plot(importance_data)
 
     return importance_data
 
 
 def print_correlation_matrix(df, selected_features, target_col='target'):
     """Print correlation matrix in terminal"""
-    print("\n" + "=" * 60)
-    print("📊 CORRELATION MATRIX")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("📊 CORRELATION MATRIX ANALYSIS")
+    print("=" * 80)
 
     # Include target in correlation analysis
     features_to_plot = selected_features + [target_col]
     corr_matrix = df[features_to_plot].corr()
 
-    print(tabulate(corr_matrix.round(3), headers=corr_matrix.columns, showindex=True, tablefmt='grid'))
+    print("\nCorrelation Matrix (Features vs Target):")
+    print("=" * 50)
+
+    # Print correlation with target
+    target_corr = corr_matrix[target_col].sort_values(ascending=False)
+    target_corr_df = pd.DataFrame({
+        'Feature': target_corr.index,
+        'Correlation with Target': target_corr.values
+    }).round(4)
+
+    print(tabulate(target_corr_df, headers='keys', tablefmt='grid', showindex=False))
+
+    print(f"\nTop 5 Most Correlated Features with Target:")
+    print("=" * 50)
+    top_corr = target_corr.abs().sort_values(ascending=False).head(6)  # Include target itself
+    top_corr = top_corr[top_corr.index != target_col]  # Remove target
+    top_corr_df = pd.DataFrame({
+        'Feature': top_corr.index,
+        'Absolute Correlation': top_corr.values
+    }).round(4)
+
+    print(tabulate(top_corr_df, headers='keys', tablefmt='grid', showindex=False))
 
 
 def print_feature_distributions(df, selected_features, target_col='target'):
     """Print feature distribution statistics in terminal"""
-    print("\n" + "=" * 60)
-    print("📈 FEATURE DISTRIBUTION STATISTICS")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("📈 FEATURE DISTRIBUTION STATISTICS BY TARGET CLASS")
+    print("=" * 80)
 
     # Select top features for clear visualization
-    top_features = selected_features[:6] if len(selected_features) >= 6 else selected_features
+    top_features = selected_features[:8] if len(selected_features) >= 8 else selected_features
 
     for feature in top_features:
-        print(f"\n{feature}:")
-        stats_df = df.groupby(target_col)[feature].agg(['mean', 'std', 'min', 'max']).round(3)
+        print(f"\n📊 {feature} Distribution:")
+        stats_df = df.groupby(target_col)[feature].agg(['mean', 'std', 'min', 'max', 'count']).round(3)
+        stats_df.columns = ['Mean', 'Std Dev', 'Min', 'Max', 'Count']
         print(tabulate(stats_df, headers='keys', tablefmt='grid'))
 
 
 def print_learning_curves(models, X_train, y_train):
     """Print learning curve summary in terminal"""
-    print("\n" + "=" * 60)
-    print("📈 LEARNING CURVES SUMMARY")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("📈 LEARNING CURVES ANALYSIS SUMMARY")
+    print("=" * 80)
 
     learning_data = []
 
@@ -674,7 +795,7 @@ def print_learning_curves(models, X_train, y_train):
             f"{train_scores_final:.4f}",
             f"{test_scores_final:.4f}",
             f"{gap:.4f}",
-            "High" if gap > 0.05 else "Medium" if gap > 0.02 else "Low"
+            "🟥 High" if gap > 0.05 else "🟨 Medium" if gap > 0.02 else "🟩 Low"
         ])
 
     print(tabulate(learning_data,
@@ -684,24 +805,39 @@ def print_learning_curves(models, X_train, y_train):
 
 def print_confusion_matrices(best_models, X_test, y_test):
     """Print confusion matrices in terminal"""
-    print("\n" + "=" * 60)
-    print("🎯 CONFUSION MATRICES")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("🎯 CONFUSION MATRICES ANALYSIS")
+    print("=" * 80)
 
     for model_name, model in best_models.items():
         y_pred = model.predict(X_test)
         cm = confusion_matrix(y_test, y_pred)
         accuracy = accuracy_score(y_test, y_pred)
-        print(f"\n{model_name} (Accuracy: {accuracy:.3f}):")
-        print(tabulate(cm, headers=['Pred No Disease', 'Pred Disease'],
-                       showindex=['True No Disease', 'True Disease'], tablefmt='grid'))
+
+        # Calculate additional metrics
+        tn, fp, fn, tp = cm.ravel()
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+
+        print(f"\n🔍 {model_name} Performance:")
+        print(f"   Accuracy: {accuracy:.4f}")
+        print(f"   Sensitivity: {sensitivity:.4f}")
+        print(f"   Specificity: {specificity:.4f}")
+        print(f"   Precision: {precision:.4f}")
+
+        print(f"\nConfusion Matrix:")
+        cm_df = pd.DataFrame(cm,
+                             index=['True No Disease', 'True Disease'],
+                             columns=['Pred No Disease', 'Pred Disease'])
+        print(tabulate(cm_df, headers='keys', tablefmt='grid'))
 
 
 def print_roc_analysis(best_models, X_test, y_test):
     """Print ROC-AUC analysis in terminal"""
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 80)
     print("📈 ROC-AUC ANALYSIS")
-    print("=" * 60)
+    print("=" * 80)
 
     auc_data = []
 
@@ -709,18 +845,64 @@ def print_roc_analysis(best_models, X_test, y_test):
         if hasattr(model, 'predict_proba'):
             y_pred_proba = model.predict_proba(X_test)[:, 1]
             auc_score = roc_auc_score(y_test, y_pred_proba)
-            auc_data.append([model_name, f"{auc_score:.4f}"])
-        else:
-            auc_data.append([model_name, "N/A"])
 
-    print(tabulate(auc_data, headers=['Model', 'AUC Score'], tablefmt='grid'))
+            # Calculate ROC curve points
+            fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+
+            # Find optimal threshold (Youden's J statistic)
+            youden_j = tpr - fpr
+            optimal_idx = np.argmax(youden_j)
+            optimal_threshold = thresholds[optimal_idx]
+
+            auc_data.append([
+                model_name,
+                f"{auc_score:.4f}",
+                f"{optimal_threshold:.4f}",
+                f"{tpr[optimal_idx]:.4f}",  # Sensitivity at optimal threshold
+                f"{1 - fpr[optimal_idx]:.4f}"  # Specificity at optimal threshold
+            ])
+        else:
+            auc_data.append([model_name, "N/A", "N/A", "N/A", "N/A"])
+
+    print(tabulate(auc_data,
+                   headers=['Model', 'AUC Score', 'Optimal Threshold', 'Sensitivity', 'Specificity'],
+                   tablefmt='grid'))
+
+
+def print_calibration_analysis(best_models, X_test, y_test):
+    """Print calibration analysis in terminal"""
+    print("\n" + "=" * 80)
+    print("⚖️ MODEL CALIBRATION ANALYSIS")
+    print("=" * 80)
+
+    calibration_data = []
+
+    for model_name, model in best_models.items():
+        if hasattr(model, 'predict_proba'):
+            y_pred_proba = model.predict_proba(X_test)[:, 1]
+            fraction_of_positives, mean_predicted_value = calibration_curve(y_test, y_pred_proba, n_bins=10)
+
+            # Calculate calibration error (mean absolute error)
+            calibration_error = np.mean(np.abs(fraction_of_positives - mean_predicted_value))
+
+            calibration_data.append([
+                model_name,
+                f"{calibration_error:.4f}",
+                "Well Calibrated" if calibration_error < 0.1 else "Moderately Calibrated" if calibration_error < 0.2 else "Poorly Calibrated"
+            ])
+        else:
+            calibration_data.append([model_name, "N/A", "N/A"])
+
+    print(tabulate(calibration_data,
+                   headers=['Model', 'Calibration Error', 'Calibration Quality'],
+                   tablefmt='grid'))
 
 
 def print_prediction_probabilities(best_models, X_test, y_test):
     """Print prediction probability statistics in terminal"""
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 80)
     print("📊 PREDICTION PROBABILITY STATISTICS")
-    print("=" * 60)
+    print("=" * 80)
 
     for model_name, model in best_models.items():
         if hasattr(model, 'predict_proba'):
@@ -730,22 +912,27 @@ def print_prediction_probabilities(best_models, X_test, y_test):
             for target_val in [0, 1]:
                 mask = (y_test == target_val)
                 probs = y_pred_proba[mask]
-                stats_data.append([
-                    'No Disease' if target_val == 0 else 'Disease',
-                    f"{np.mean(probs):.3f}",
-                    f"{np.std(probs):.3f}",
-                    f"{np.min(probs):.3f}",
-                    f"{np.max(probs):.3f}"
-                ])
+                if len(probs) > 0:
+                    stats_data.append([
+                        'No Disease' if target_val == 0 else 'Disease',
+                        f"{np.mean(probs):.3f}",
+                        f"{np.std(probs):.3f}",
+                        f"{np.min(probs):.3f}",
+                        f"{np.median(probs):.3f}",
+                        f"{np.max(probs):.3f}",
+                        f"{len(probs)}"
+                    ])
 
-            print(f"\n{model_name}:")
-            print(tabulate(stats_data, headers=['True Class', 'Mean', 'Std', 'Min', 'Max'], tablefmt='grid'))
+            print(f"\n📈 {model_name} Probability Distribution:")
+            print(tabulate(stats_data,
+                           headers=['True Class', 'Mean', 'Std', 'Min', 'Median', 'Max', 'Count'],
+                           tablefmt='grid'))
 
 
 def print_classification_reports(best_models, X_test, y_test):
     """Print classification reports for all models"""
     print("\n" + "=" * 80)
-    print("📋 CLASSIFICATION REPORTS - ALL MODELS")
+    print("📋 DETAILED CLASSIFICATION REPORTS - ALL MODELS")
     print("=" * 80)
 
     for model_name, model in best_models.items():
@@ -754,13 +941,22 @@ def print_classification_reports(best_models, X_test, y_test):
         report_df = pd.DataFrame(report).transpose()
 
         print(f"\n🎯 {model_name} Classification Report:")
-        print(tabulate(report_df.round(4), headers='keys', tablefmt='grid'))
+        print("=" * 50)
+
+        # Print main metrics
+        main_metrics = report_df.loc[['0', '1', 'accuracy'], :].round(4)
+        print(tabulate(main_metrics, headers='keys', tablefmt='grid'))
+
+        # Print weighted averages
+        weighted_avg = report_df.loc[['weighted avg'], :].round(4)
+        print(f"\nWeighted Averages:")
+        print(tabulate(weighted_avg, headers='keys', tablefmt='grid'))
 
 
 def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_features, df_encoded):
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 80)
     print("🤖 ENHANCED MODEL TRAINING & EVALUATION")
-    print("=" * 50)
+    print("=" * 80)
 
     # Create initial analyses
     print("\n📊 Creating initial analyses...")
@@ -845,7 +1041,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
         cv_mean = cv_scores.mean()
 
         accuracy_gap = train_accuracy - test_accuracy
-        overfitting_level = 'High' if accuracy_gap > 0.05 else 'Medium' if accuracy_gap > 0.02 else 'Low'
+        overfitting_level = '🟥 High' if accuracy_gap > 0.05 else '🟨 Medium' if accuracy_gap > 0.02 else '🟩 Low'
 
         results.append({
             'Model': model_name,
@@ -863,6 +1059,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
     print_learning_curves(models, X_train, y_train)
     print_confusion_matrices(best_models, X_test, y_test)
     print_roc_analysis(best_models, X_test, y_test)
+    print_calibration_analysis(best_models, X_test, y_test)
     print_prediction_probabilities(best_models, X_test, y_test)
     print_classification_reports(best_models, X_test, y_test)
 
@@ -875,7 +1072,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
 
     # Display results
     print("\n" + "=" * 80)
-    print("📊 COMPREHENSIVE MODEL COMPARISON")
+    print("📊 COMPREHENSIVE MODEL COMPARISON SUMMARY")
     print("=" * 80)
     results_df = pd.DataFrame(results)
     print(tabulate(results_df, headers='keys', tablefmt='grid', showindex=False))
@@ -888,11 +1085,13 @@ def main():
     print("=" * 80)
     print("Selected Models: SVM (RBF), XGBoost, MLP, KNN, Voting Ensemble")
     print("Key Improvements:")
+    print("  • HD Visualizations with Times New Roman font")
     print("  • Enhanced feature engineering with clinical features")
     print("  • Improved feature selection using multiple methods")
     print("  • Regularized models to prevent overfitting")
     print("  • Higher K values for KNN (15-30)")
     print("  • Ensemble methods for better generalization")
+    print("  • Comprehensive terminal output for research analysis")
     print("=" * 80)
 
     # 1. Load data
@@ -913,25 +1112,39 @@ def main():
     )
 
     print("\n" + "🎯 PROJECT COMPLETED SUCCESSFULLY!")
-    print("\n📊 All analyses displayed in terminal above:")
-    print("📈 COMPREHENSIVE VISUALIZATIONS SAVED:")
-    print("   1. comprehensive_model_comparison.png - Main dashboard (4 plots)")
-    print("   2. learning_curves_comparison.png - Learning curves")
-    print("   3. comprehensive_feature_importance.png - Feature importance (ALL MODELS)")
-    print("   4. confusion_matrices_comparison.png - Confusion matrices")
-    print("   5. probability_distributions_combined.png - Combined probability distributions")
-    print("   6. roc_auc_comparison.png - ROC curves")
+    print("\n📊 ALL ANALYSES DISPLAYED IN TERMINAL ABOVE:")
+    print("   ✓ Correlation Matrix Analysis")
+    print("   ✓ Feature Distribution Statistics")
+    print("   ✓ Learning Curves Analysis")
+    print("   ✓ Confusion Matrices Analysis")
+    print("   ✓ ROC-AUC Analysis")
+    print("   ✓ Calibration Analysis")
+    print("   ✓ Prediction Probability Statistics")
+    print("   ✓ Detailed Classification Reports")
+    print("   ✓ Feature Importance Analysis")
+    print("   ✓ Comprehensive Model Comparison")
+
+    print("\n📈 HD VISUALIZATIONS SAVED:")
+    print("   1. comprehensive_feature_importance_hd.png - Single comprehensive feature importance plot")
+    print("   2. comprehensive_model_comparison_hd.png - Main dashboard (4 plots)")
+    print("   3. learning_curves_comparison_hd.png - Learning curves")
+    print("   4. confusion_matrices_comparison_hd.png - Confusion matrices")
+    print("   5. probability_distributions_combined_hd.png - Combined probability distributions")
+    print("   6. roc_auc_comparison_hd.png - ROC curves")
 
     print("\n🔍 FEATURE IMPORTANCE METHODS USED:")
     for model_name, importance_df in importance_data.items():
         print(f"   - {model_name}: {importance_df['Method'].iloc[0]}")
 
     print("\n✅ Key improvements implemented:")
+    print("   • HD visualizations with Times New Roman font (600 DPI)")
+    print("   • Single comprehensive feature importance plot with distinct colors")
     print("   • KNN overfitting reduced with higher n_neighbors (15-30)")
     print("   • Enhanced feature engineering with clinical ratios")
     print("   • Improved feature selection using combined methods")
     print("   • Added ensemble methods for better generalization")
     print("   • Increased regularization across all models")
+    print("   • Comprehensive terminal output for research analysis")
 
 
 if __name__ == "__main__":
