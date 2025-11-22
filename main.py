@@ -1041,7 +1041,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
         cv_mean = cv_scores.mean()
 
         accuracy_gap = train_accuracy - test_accuracy
-        overfitting_level = '🟥 High' if accuracy_gap > 0.05 else '🟨 Medium' if accuracy_gap > 0.02 else '🟩 Low'
+        overfitting_level = 'High' if accuracy_gap > 0.05 else 'Medium' if accuracy_gap > 0.02 else 'Low'
 
         results.append({
             'Model': model_name,
