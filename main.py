@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import warnings
+import time
 
 from sklearn.calibration import calibration_curve
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, StratifiedKFold, learning_curve
@@ -9,7 +10,7 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve, \
-    precision_recall_curve, average_precision_score
+    precision_recall_curve, average_precision_score, precision_score, recall_score, f1_score
 from sklearn.feature_selection import SelectKBest, f_classif, RFECV
 from sklearn.inspection import permutation_importance
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -29,10 +30,10 @@ plt.rcParams.update({
     'font.family': 'Times New Roman',
     'font.size': 12,
     'axes.titlesize': 14,
-    'axes.labelsize': 12,
-    'xtick.labelsize': 10,
-    'ytick.labelsize': 10,
-    'legend.fontsize': 10,
+    'axes.labelsize': 17,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
+    'legend.fontsize': 14,
     'figure.titlesize': 16,
     'figure.dpi': 300,
     'savefig.dpi': 300,
@@ -277,71 +278,6 @@ def calculate_feature_importance(model, model_name, X_test, y_test, selected_fea
     return feature_importance_df
 
 
-def create_comprehensive_feature_importance_single_plot(importance_data,
-                                                        filename='comprehensive_feature_importance_hd.png'):
-    """Create a single comprehensive feature importance plot with different colors for each model"""
-    print(f"\n🎨 Creating Comprehensive Feature Importance Visualization (HD)...")
-
-    plt.figure(figsize=(14, 10))
-
-    # Define distinct colors for each model
-    model_colors = {
-        'SVM (RBF)': '#1f77b4',
-        'XGBoost': '#ff7f0e',
-        'MLP': '#2ca02c',
-        'KNN': '#d62728',
-        'Voting_Ensemble': '#9467bd'
-    }
-
-    # Get all unique features across all models
-    all_features = set()
-    for importance_df in importance_data.values():
-        all_features.update(importance_df['Feature'].tolist())
-
-    # Create a matrix for plotting
-    features_list = sorted(list(all_features))
-    n_features = len(features_list)
-    n_models = len(importance_data)
-
-    # Set up the plot
-    bar_width = 0.15
-    index = np.arange(n_features)
-
-    # Plot bars for each model
-    for idx, (model_name, importance_df) in enumerate(importance_data.items()):
-        # Create a mapping from feature to importance for this model
-        feature_importance_map = dict(zip(importance_df['Feature'], importance_df['Importance']))
-        importances = [feature_importance_map.get(feature, 0) for feature in features_list]
-
-        plt.bar(index + idx * bar_width, importances, bar_width,
-                label=model_name, color=model_colors.get(model_name, f'C{idx}'),
-                alpha=0.8, edgecolor='black', linewidth=0.5)
-
-    # Customize the plot for research paper
-    plt.xlabel('Features', fontweight='bold', fontsize=14)
-    plt.ylabel('Importance Score', fontweight='bold', fontsize=14)
-    plt.title('Comprehensive Feature Importance Analysis\nAcross All Machine Learning Models',
-              fontweight='bold', fontsize=16, pad=20)
-    plt.xticks(index + bar_width * (n_models - 1) / 2, features_list, rotation=45, ha='right')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True, fancybox=True, shadow=True)
-    plt.grid(True, alpha=0.3, axis='y')
-
-    # Add value labels on bars for the highest importance values
-    for idx, (model_name, importance_df) in enumerate(importance_data.items()):
-        feature_importance_map = dict(zip(importance_df['Feature'], importance_df['Importance']))
-        for j, feature in enumerate(features_list):
-            importance = feature_importance_map.get(feature, 0)
-            if importance > 0.05:  # Only label significant importances
-                plt.text(j + idx * bar_width, importance + 0.01, f'{importance:.3f}',
-                         ha='center', va='bottom', fontsize=8, rotation=90)
-
-    plt.tight_layout()
-    plt.savefig(filename, dpi=600, bbox_inches='tight')
-    plt.close()
-
-    print(f"✅ HD comprehensive feature importance saved as '{filename}'")
-
-
 def print_feature_importance_comprehensive(importance_data):
     """Print comprehensive feature importance analysis in terminal"""
     print("\n" + "=" * 80)
@@ -403,66 +339,6 @@ def create_roc_auc_visualization(best_models, X_test, y_test, filename='roc_auc_
     plt.close()
 
     print(f"✅ HD ROC AUC visualization saved as '{filename}'")
-
-
-def create_probability_distributions_combined(best_models, X_test, y_test,
-                                              filename='probability_distributions_combined_hd.png'):
-    """Create combined probability distribution plot for all models in one graph in HD"""
-    print(f"\n📊 Creating Combined Probability Distributions Visualization (HD)...")
-
-    # Define colors for different models
-    model_colors = {
-        'SVM (RBF)': '#1f77b4',
-        'XGBoost': '#ff7f0e',
-        'MLP': '#2ca02c',
-        'KNN': '#d62728',
-        'Voting_Ensemble': '#9467bd'
-    }
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
-
-    for model_name, model in best_models.items():
-        if not hasattr(model, 'predict_proba'):
-            continue
-
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
-        color = model_colors.get(model_name, 'black')
-
-        # Plot for No Disease class (y_test == 0)
-        mask_no_disease = (y_test == 0)
-        probs_no_disease = y_pred_proba[mask_no_disease]
-
-        # Plot for Disease class (y_test == 1)
-        mask_disease = (y_test == 1)
-        probs_disease = y_pred_proba[mask_disease]
-
-        # Plot histograms with KDE
-        ax1.hist(probs_no_disease, bins=20, alpha=0.6, color=color,
-                 label=f'{model_name}', density=True, histtype='stepfilled', edgecolor='black', linewidth=0.5)
-        ax2.hist(probs_disease, bins=20, alpha=0.6, color=color,
-                 label=f'{model_name}', density=True, histtype='stepfilled', edgecolor='black', linewidth=0.5)
-
-    # Customize No Disease subplot
-    ax1.set_xlabel('Predicted Probability', fontweight='bold', fontsize=12)
-    ax1.set_ylabel('Density', fontweight='bold', fontsize=12)
-    ax1.set_title('Probability Distribution - No Disease Cases', fontweight='bold', fontsize=14)
-    ax1.legend(frameon=True, fancybox=True, shadow=True)
-    ax1.grid(True, alpha=0.3)
-    ax1.set_xlim(0, 1)
-
-    # Customize Disease subplot
-    ax2.set_xlabel('Predicted Probability', fontweight='bold', fontsize=12)
-    ax2.set_ylabel('Density', fontweight='bold', fontsize=12)
-    ax2.set_title('Probability Distribution - Disease Cases', fontweight='bold', fontsize=14)
-    ax2.legend(frameon=True, fancybox=True, shadow=True)
-    ax2.grid(True, alpha=0.3)
-    ax2.set_xlim(0, 1)
-
-    plt.tight_layout()
-    plt.savefig(filename, dpi=600, bbox_inches='tight')
-    plt.close()
-
-    print(f"✅ HD combined probability distributions saved as '{filename}'")
 
 
 def create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features,
@@ -622,91 +498,82 @@ def create_learning_curves_visualization(best_models, X_train, y_train, filename
     print(f"✅ HD learning curves comparison saved as '{filename}'")
 
 
-def create_confusion_matrices_visualization(best_models, X_test, y_test,
-                                            filename='confusion_matrices_comparison_hd.png'):
-    """Create confusion matrices visualization for all models in HD"""
-    print(f"\n🎯 Creating Confusion Matrices Visualization (HD)...")
+def create_clinical_distributions_consolidated(df, filename='clinical_distributions_consolidated_hd.png'):
+    """Create consolidated clinical distributions visualization in one graph"""
+    print(f"\n📊 Creating Consolidated Clinical Distributions Visualization (HD)...")
 
-    n_models = len(best_models)
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
-    axes = axes.ravel()
+    plt.figure(figsize=(16, 10))
 
-    # Define colors for different models
-    model_colors = {
-        'SVM (RBF)': 'Blues',
-        'XGBoost': 'Oranges',
-        'MLP': 'Greens',
-        'KNN': 'Reds',
-        'Voting_Ensemble': 'Purples'
+    # Define clinical features and their labels
+    clinical_features = ['restecg', 'cp', 'slope', 'exang']
+    feature_labels = {
+        'restecg': 'Resting ECG',
+        'cp': 'Chest Pain Type',
+        'slope': 'Slope of ST Segment',
+        'exang': 'Exercise Induced Angina'
     }
 
-    for idx, (model_name, model) in enumerate(best_models.items()):
-        if idx >= len(axes):
-            break
+    # Define colors for different clinical features
+    feature_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
 
-        y_pred = model.predict(X_test)
-        cm = confusion_matrix(y_test, y_pred)
-        accuracy = accuracy_score(y_test, y_pred)
+    # Calculate disease rates for each feature category
+    disease_rates_data = []
 
-        # Plot confusion matrix with model-specific colormap
-        cmap = model_colors.get(model_name, 'Blues')
-        im = axes[idx].imshow(cm, interpolation='nearest', cmap=cmap)
-        axes[idx].set_title(f'{model_name}\n(Accuracy: {accuracy:.3f})', fontweight='bold', fontsize=12)
+    for feature, color in zip(clinical_features, feature_colors):
+        if feature in df.columns:
+            # Calculate disease rate for each category
+            feature_dist = df.groupby(feature)['target'].agg(['count', 'mean']).reset_index()
+            feature_dist['disease_rate'] = feature_dist['mean'] * 100
+            feature_dist['feature_type'] = feature_labels[feature]
+            feature_dist['color'] = color
 
-        # Add text annotations
-        thresh = cm.max() / 2.
-        for i in range(cm.shape[0]):
-            for j in range(cm.shape[1]):
-                axes[idx].text(j, i, format(cm[i, j], 'd'),
-                               ha="center", va="center", fontweight='bold',
-                               color="white" if cm[i, j] > thresh else "black")
+            disease_rates_data.append(feature_dist)
 
-        axes[idx].set_xticks([0, 1])
-        axes[idx].set_yticks([0, 1])
-        axes[idx].set_xticklabels(['Pred No\nDisease', 'Pred\nDisease'], fontsize=10)
-        axes[idx].set_yticklabels(['True No\nDisease', 'True\nDisease'], fontsize=10)
-        axes[idx].set_ylabel('True Label', fontweight='bold', fontsize=10)
-        axes[idx].set_xlabel('Predicted Label', fontweight='bold', fontsize=10)
+    # Combine all data
+    all_disease_rates = pd.concat(disease_rates_data, ignore_index=True)
 
-    # Hide unused subplots
-    for idx in range(n_models, len(axes)):
-        axes[idx].set_visible(False)
+    # Create the plot
+    ax = plt.subplot(111)
+
+    # Plot bars for each feature category
+    bar_width = 0.6
+    y_pos = np.arange(len(all_disease_rates))
+
+    bars = ax.barh(y_pos, all_disease_rates['disease_rate'],
+                   height=bar_width, color=all_disease_rates['color'], alpha=0.8, edgecolor='black')
+
+    # Customize the plot
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels([f"{row['feature_type']} - Category {row[feature]}"
+                        for _, row in all_disease_rates.iterrows()], fontsize=10)
+    ax.set_xlabel('Heart Disease Rate (%)', fontweight='bold', fontsize=12)
+    ax.set_ylabel('Clinical Feature Categories', fontweight='bold', fontsize=12)
+    ax.set_title('Clinical Feature Distributions - Heart Disease Rates by Category',
+                 fontweight='bold', fontsize=16, pad=20)
+    ax.grid(True, alpha=0.3, axis='x')
+
+    # Add value labels on bars
+    for i, (bar, rate, count) in enumerate(zip(bars, all_disease_rates['disease_rate'], all_disease_rates['count'])):
+        ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height() / 2,
+                f'{rate:.1f}% (n={count})', va='center', fontsize=9, fontweight='bold')
+
+    # Create custom legend for clinical features
+    legend_elements = [plt.Rectangle((0, 0), 1, 1, facecolor=color, alpha=0.8, edgecolor='black',
+                                     label=feature_labels[feature])
+                       for feature, color in zip(clinical_features, feature_colors)]
+    ax.legend(handles=legend_elements, loc='lower right', frameon=True, fancybox=True, shadow=True)
 
     plt.tight_layout()
     plt.savefig(filename, dpi=600, bbox_inches='tight')
     plt.close()
 
-    print(f"✅ HD confusion matrices comparison saved as '{filename}'")
+    print(f"✅ HD consolidated clinical distributions saved as '{filename}'")
 
 
-def create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_train, selected_features, results):
-    """Create comprehensive visualizations including ROC AUC in HD"""
-    print(f"\n📊 Creating All Comprehensive Visualizations (HD)...")
-
-    # 1. Main comprehensive comparison (4-in-1)
-    create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features)
-
-    # 2. Learning curves
-    create_learning_curves_visualization(best_models, X_train, y_train)
-
-    # 3. Feature importance (UPDATED - now returns importance data)
-    importance_data = create_feature_importance_comprehensive_single(best_models, X_test, y_test, selected_features)
-
-    # 4. Confusion matrices
-    create_confusion_matrices_visualization(best_models, X_test, y_test)
-
-    # 5. Combined probability distributions
-    create_probability_distributions_combined(best_models, X_test, y_test)
-
-    # 6. ROC AUC
-    create_roc_auc_visualization(best_models, X_test, y_test)
-
-    return importance_data
-
-
-def create_feature_importance_comprehensive_single(best_models, X_test, y_test, selected_features):
-    """Create comprehensive feature importance comparison for all models and return data"""
-    print(f"\n🔍 Creating Comprehensive Feature Importance Analysis (HD)...")
+def create_feature_importance_comparison(best_models, X_test, y_test, selected_features,
+                                         filename='feature_importance_comparison_hd.png'):
+    """Create comprehensive feature importance comparison across all models in one graph"""
+    print(f"\n📊 Creating Feature Importance Comparison (HD)...")
 
     # Calculate feature importance for all models
     importance_data = {}
@@ -715,10 +582,283 @@ def create_feature_importance_comprehensive_single(best_models, X_test, y_test, 
             model, model_name, X_test, y_test, selected_features
         )
 
-    # Create the single comprehensive visualization
-    create_comprehensive_feature_importance_single_plot(importance_data)
+    # Create visualization
+    plt.figure(figsize=(16, 12))
 
+    # Define colors for models
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
+
+    # Get all unique features across models
+    all_features = set()
+    for importance_df in importance_data.values():
+        all_features.update(importance_df['Feature'].tolist())
+
+    # Create a matrix for heatmap
+    feature_matrix = pd.DataFrame(index=list(all_features))
+
+    for model_name, importance_df in importance_data.items():
+        # Normalize importance scores to 0-1 for better comparison
+        importance_df_normalized = importance_df.copy()
+        importance_df_normalized['Importance'] = importance_df_normalized['Importance'] / importance_df_normalized[
+            'Importance'].max()
+
+        # Create mapping for features
+        feature_importance_map = dict(zip(importance_df_normalized['Feature'], importance_df_normalized['Importance']))
+        feature_matrix[model_name] = feature_matrix.index.map(lambda x: feature_importance_map.get(x, 0))
+
+    # Sort features by average importance
+    feature_matrix['Average'] = feature_matrix.mean(axis=1)
+    feature_matrix = feature_matrix.sort_values('Average', ascending=True)
+    feature_matrix = feature_matrix.drop('Average', axis=1)
+
+    # Create heatmap
+    fig, ax = plt.subplots(figsize=(14, 10))
+    im = ax.imshow(feature_matrix.T, cmap='YlOrRd', aspect='auto', interpolation='nearest')
+
+    # Customize axes
+    ax.set_xticks(np.arange(len(feature_matrix)))
+    ax.set_yticks(np.arange(len(feature_matrix.columns)))
+    ax.set_xticklabels(feature_matrix.index, rotation=45, ha='right', fontsize=10)
+    ax.set_yticklabels(feature_matrix.columns, fontsize=12, fontweight='bold')
+
+    # Add value annotations
+    for i in range(len(feature_matrix.columns)):
+        for j in range(len(feature_matrix)):
+            text = ax.text(j, i, f'{feature_matrix.iloc[j, i]:.2f}',
+                           ha="center", va="center", color="black" if feature_matrix.iloc[j, i] < 0.6 else "white",
+                           fontsize=9, fontweight='bold')
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label('Normalized Feature Importance', fontweight='bold', fontsize=12)
+
+    plt.title('Comprehensive Feature Importance Comparison Across All Models',
+              fontweight='bold', fontsize=16, pad=20)
+    plt.tight_layout()
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
+    plt.close()
+
+    print(f"✅ HD feature importance comparison saved as '{filename}'")
     return importance_data
+
+
+def create_prediction_confidence_distribution(best_models, X_test, y_test,
+                                              filename='prediction_confidence_distribution_hd.png'):
+    """Create distribution of prediction confidence scores for all models in one graph"""
+    print(f"\n📊 Creating Prediction Confidence Distribution (HD)...")
+
+    plt.figure(figsize=(14, 10))
+
+    # Define colors for models
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
+
+    # Create subplots for correct and incorrect predictions
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+
+    for model_name, model in best_models.items():
+        if hasattr(model, 'predict_proba'):
+            y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+            # Plot correct vs incorrect predictions
+            correct_predictions = (model.predict(X_test) == y_test)
+            correct_confidences = y_pred_proba[correct_predictions]
+            incorrect_confidences = y_pred_proba[~correct_predictions]
+
+            # Plot density distributions
+            if len(correct_confidences) > 0:
+                ax1.hist(correct_confidences, bins=20, alpha=0.6, color=model_colors[model_name],
+                         label=f'{model_name}', density=True, histtype='stepfilled')
+
+            if len(incorrect_confidences) > 0:
+                ax2.hist(incorrect_confidences, bins=20, alpha=0.6, color=model_colors[model_name],
+                         label=f'{model_name}', density=True, histtype='stepfilled')
+
+    # Customize correct predictions subplot
+    ax1.set_xlabel('Prediction Confidence', fontweight='bold', fontsize=12)
+    ax1.set_ylabel('Density', fontweight='bold', fontsize=12)
+    ax1.set_title('Confidence Distribution - Correct Predictions', fontweight='bold', fontsize=14)
+    ax1.legend(frameon=True, fancybox=True, shadow=True)
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim(0, 1)
+
+    # Customize incorrect predictions subplot
+    ax2.set_xlabel('Prediction Confidence', fontweight='bold', fontsize=12)
+    ax2.set_ylabel('Density', fontweight='bold', fontsize=12)
+    ax2.set_title('Confidence Distribution - Incorrect Predictions', fontweight='bold', fontsize=14)
+    ax2.legend(frameon=True, fancybox=True, shadow=True)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xlim(0, 1)
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
+    plt.close()
+
+    print(f"✅ HD prediction confidence distribution saved as '{filename}'")
+
+
+def create_model_performance_parallel(best_models, X_test, y_test, filename='model_performance_parallel_hd.png'):
+    """Create parallel coordinates plot for model performance metrics"""
+    print(f"\n📊 Creating Model Performance Parallel Coordinates (HD)...")
+
+    # Calculate metrics for each model
+    metrics_data = []
+
+    for model_name, model in best_models.items():
+        y_pred = model.predict(X_test)
+        y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+
+        # Calculate metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, zero_division=0)
+        recall = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        auc_roc = roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else 0
+
+        metrics_data.append({
+            'Model': model_name,
+            'Accuracy': accuracy,
+            'Precision': precision,
+            'Recall': recall,
+            'F1-Score': f1,
+            'AUC-ROC': auc_roc
+        })
+
+    # Create parallel coordinates plot
+    fig, ax = plt.subplots(figsize=(14, 10))
+
+    # Define colors for models
+    model_colors = {
+        'SVM (RBF)': '#1f77b4',
+        'XGBoost': '#ff7f0e',
+        'MLP': '#2ca02c',
+        'KNN': '#d62728',
+        'Voting_Ensemble': '#9467bd'
+    }
+
+    # Prepare data for parallel coordinates
+    metrics_df = pd.DataFrame(metrics_data)
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'AUC-ROC']
+
+    # Normalize metrics to 0-1 scale for better visualization
+    normalized_df = metrics_df.copy()
+    for metric in metrics:
+        normalized_df[metric] = (normalized_df[metric] - normalized_df[metric].min()) / (
+                    normalized_df[metric].max() - normalized_df[metric].min())
+
+    # Plot parallel coordinates
+    for idx, row in normalized_df.iterrows():
+        model_name = row['Model']
+        values = [row[metric] for metric in metrics]
+        ax.plot(metrics, values, 'o-', linewidth=3, markersize=8,
+                color=model_colors[model_name], label=model_name, alpha=0.8)
+
+    # Customize the plot
+    ax.set_ylabel('Normalized Performance Score', fontweight='bold', fontsize=12)
+    ax.set_xlabel('Performance Metrics', fontweight='bold', fontsize=12)
+    ax.set_title('Model Performance Comparison - Parallel Coordinates',
+                 fontweight='bold', fontsize=16, pad=20)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True, fancybox=True, shadow=True)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 1)
+
+    # Add value annotations
+    for idx, row in metrics_df.iterrows():
+        model_name = row['Model']
+        for i, metric in enumerate(metrics):
+            ax.text(i, normalized_df.loc[idx, metric] + 0.02, f'{row[metric]:.3f}',
+                    ha='center', va='bottom', fontsize=8, fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor=model_colors[model_name], alpha=0.7))
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=600, bbox_inches='tight')
+    plt.close()
+
+    print(f"✅ HD model performance parallel coordinates saved as '{filename}'")
+
+
+def print_model_performance_parallel(best_models, X_test, y_test):
+    """Print parallel coordinates metrics in terminal"""
+    print("\n" + "=" * 80)
+    print("📊 MODEL PERFORMANCE PARALLEL COORDINATES METRICS")
+    print("=" * 80)
+
+    parallel_data = []
+
+    for model_name, model in best_models.items():
+        y_pred = model.predict(X_test)
+        y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, zero_division=0)
+        recall = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        auc_roc = roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else 0
+
+        parallel_data.append([
+            model_name,
+            f"{accuracy:.4f}",
+            f"{precision:.4f}",
+            f"{recall:.4f}",
+            f"{f1:.4f}",
+            f"{auc_roc:.4f}"
+        ])
+
+    print(tabulate(parallel_data,
+                   headers=['Model', 'Accuracy', 'Precision', 'Recall', 'F1-Score', 'AUC-ROC'],
+                   tablefmt='grid'))
+
+
+def print_prediction_confidence_analysis(best_models, X_test, y_test):
+    """Print prediction confidence analysis in terminal"""
+    print("\n" + "=" * 80)
+    print("📊 PREDICTION CONFIDENCE ANALYSIS")
+    print("=" * 80)
+
+    for model_name, model in best_models.items():
+        if hasattr(model, 'predict_proba'):
+            y_pred_proba = model.predict_proba(X_test)[:, 1]
+            y_pred = model.predict(X_test)
+
+            correct_predictions = (y_pred == y_test)
+            correct_confidences = y_pred_proba[correct_predictions]
+            incorrect_confidences = y_pred_proba[~correct_predictions]
+
+            print(f"\n🔍 {model_name} Confidence Analysis:")
+            print(f"   Correct Predictions: {len(correct_confidences)}")
+            print(f"   Incorrect Predictions: {len(incorrect_confidences)}")
+
+            if len(correct_confidences) > 0:
+                print(f"   Avg Confidence (Correct): {np.mean(correct_confidences):.4f}")
+                print(f"   Std Confidence (Correct): {np.std(correct_confidences):.4f}")
+
+            if len(incorrect_confidences) > 0:
+                print(f"   Avg Confidence (Incorrect): {np.mean(incorrect_confidences):.4f}")
+                print(f"   Std Confidence (Incorrect): {np.std(incorrect_confidences):.4f}")
+
+            # Calculate confidence threshold analysis
+            thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+            print(f"\n   Confidence Threshold Analysis:")
+            for threshold in thresholds:
+                high_confidence = y_pred_proba >= threshold
+                high_confidence_correct = np.sum((y_pred == y_test) & high_confidence)
+                high_confidence_total = np.sum(high_confidence)
+
+                if high_confidence_total > 0:
+                    accuracy_at_threshold = high_confidence_correct / high_confidence_total
+                    print(f"   Threshold {threshold}: {accuracy_at_threshold:.4f} accuracy "
+                          f"({high_confidence_correct}/{high_confidence_total} predictions)")
 
 
 def print_correlation_matrix(df, selected_features, target_col='target'):
@@ -819,12 +959,14 @@ def print_confusion_matrices(best_models, X_test, y_test):
         sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
         specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        f1_score_val = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
 
         print(f"\n🔍 {model_name} Performance:")
         print(f"   Accuracy: {accuracy:.4f}")
         print(f"   Sensitivity: {sensitivity:.4f}")
         print(f"   Specificity: {specificity:.4f}")
         print(f"   Precision: {precision:.4f}")
+        print(f"   F1-Score: {f1_score_val:.4f}")
 
         print(f"\nConfusion Matrix:")
         cm_df = pd.DataFrame(cm,
@@ -953,6 +1095,67 @@ def print_classification_reports(best_models, X_test, y_test):
         print(tabulate(weighted_avg, headers='keys', tablefmt='grid'))
 
 
+def print_clinical_distributions(df):
+    """Print clinical distributions in terminal"""
+    print("\n" + "=" * 80)
+    print("🏥 CLINICAL FEATURE DISTRIBUTIONS")
+    print("=" * 80)
+
+    clinical_features = ['restecg', 'cp', 'slope', 'exang', 'thal']
+    feature_names = {
+        'restecg': 'Resting ECG',
+        'cp': 'Chest Pain Type',
+        'slope': 'Slope of Peak Exercise ST Segment',
+        'exang': 'Exercise Induced Angina',
+        'thal': 'Thalassemia'
+    }
+
+    for feature in clinical_features:
+        if feature in df.columns:
+            print(f"\n📊 {feature_names.get(feature, feature)} Distribution:")
+            distribution = pd.crosstab(df[feature], df['target'])
+            distribution.columns = ['No Disease', 'Disease']
+            distribution['Total'] = distribution.sum(axis=1)
+            distribution['Disease Rate (%)'] = (distribution['Disease'] / distribution['Total'] * 100).round(2)
+            print(tabulate(distribution, headers='keys', tablefmt='grid'))
+
+
+def create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_train, selected_features, results, df):
+    """Create comprehensive visualizations including ROC AUC in HD"""
+    print(f"\n📊 Creating All Comprehensive Visualizations (HD)...")
+
+    # 1. Main comprehensive comparison (4-in-1)
+    create_comprehensive_model_comparison(best_models, X_test, y_test, results, selected_features)
+
+    # 2. Learning curves
+    create_learning_curves_visualization(best_models, X_train, y_train)
+
+    # 3. ROC AUC
+    create_roc_auc_visualization(best_models, X_test, y_test)
+
+    # 4. Clinical distributions (CONSOLIDATED - 1 graph)
+    create_clinical_distributions_consolidated(df)
+
+    # 5. NEW: Model Performance Parallel Coordinates
+    create_model_performance_parallel(best_models, X_test, y_test)
+
+    # 6. NEW: Prediction Confidence Distribution (CONSOLIDATED - 1 graph)
+    create_prediction_confidence_distribution(best_models, X_test, y_test)
+
+    # 7. NEW: Feature Importance Comparison (CONSOLIDATED - 1 graph)
+    importance_data = create_feature_importance_comparison(best_models, X_test, y_test, selected_features)
+
+    # Print all visualizations in terminal
+    print("\n" + "=" * 80)
+    print("📋 COMPREHENSIVE TERMINAL OUTPUT FOR ALL VISUALIZATIONS")
+    print("=" * 80)
+
+    print_model_performance_parallel(best_models, X_test, y_test)
+    print_prediction_confidence_analysis(best_models, X_test, y_test)
+
+    return importance_data
+
+
 def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selected_features, df_encoded):
     print("\n" + "=" * 80)
     print("🤖 ENHANCED MODEL TRAINING & EVALUATION")
@@ -962,6 +1165,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
     print("\n📊 Creating initial analyses...")
     print_correlation_matrix(df_encoded, selected_features)
     print_feature_distributions(df_encoded, selected_features)
+    print_clinical_distributions(df_encoded)
 
     cv_strategy = create_robust_cv_strategy()
 
@@ -1009,9 +1213,12 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
 
     results = []
     best_models = {}
+    training_times = {}
 
     for model_name, model in models.items():
         print(f"\n📈 Training {model_name}...")
+
+        start_time = time.time()
 
         # Skip grid search for ensemble if no parameters to tune
         if model_name == 'Voting_Ensemble' and not param_grids[model_name]:
@@ -1026,6 +1233,9 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
             grid_search.fit(X_train, y_train)
             best_model = grid_search.best_estimator_
             best_params = str(grid_search.best_params_)
+
+        training_time = time.time() - start_time
+        training_times[model_name] = training_time
 
         best_models[model_name] = best_model
 
@@ -1051,7 +1261,8 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
             'CV Score': f"{cv_mean:.4f}",
             'AUC Score': f"{auc_score:.4f}" if auc_score else 'N/A',
             'Acc Gap': f"{accuracy_gap:.4f}",
-            'Overfitting': overfitting_level
+            'Overfitting': overfitting_level,
+            'Training Time': f"{training_time:.2f}s"
         })
 
     # Create comprehensive analyses
@@ -1065,7 +1276,7 @@ def enhanced_train_and_evaluate_models(X_train, X_test, y_train, y_test, selecte
 
     # Create comprehensive visualizations
     importance_data = create_comprehensive_visualizations(best_models, X_test, y_test, X_train, y_train,
-                                                          selected_features, results)
+                                                          selected_features, results, df_encoded)
 
     # Print comprehensive feature importance analysis
     print_feature_importance_comprehensive(importance_data)
@@ -1115,6 +1326,7 @@ def main():
     print("\n📊 ALL ANALYSES DISPLAYED IN TERMINAL ABOVE:")
     print("   ✓ Correlation Matrix Analysis")
     print("   ✓ Feature Distribution Statistics")
+    print("   ✓ Clinical Feature Distributions")
     print("   ✓ Learning Curves Analysis")
     print("   ✓ Confusion Matrices Analysis")
     print("   ✓ ROC-AUC Analysis")
@@ -1123,14 +1335,17 @@ def main():
     print("   ✓ Detailed Classification Reports")
     print("   ✓ Feature Importance Analysis")
     print("   ✓ Comprehensive Model Comparison")
+    print("   ✓ Model Performance Parallel Coordinates Metrics")
+    print("   ✓ Prediction Confidence Analysis")
 
     print("\n📈 HD VISUALIZATIONS SAVED:")
-    print("   1. comprehensive_feature_importance_hd.png - Single comprehensive feature importance plot")
-    print("   2. comprehensive_model_comparison_hd.png - Main dashboard (4 plots)")
-    print("   3. learning_curves_comparison_hd.png - Learning curves")
-    print("   4. confusion_matrices_comparison_hd.png - Confusion matrices")
-    print("   5. probability_distributions_combined_hd.png - Combined probability distributions")
-    print("   6. roc_auc_comparison_hd.png - ROC curves")
+    print("   1. comprehensive_model_comparison_hd.png - Main dashboard (4 plots)")
+    print("   2. learning_curves_comparison_hd.png - Learning curves")
+    print("   3. roc_auc_comparison_hd.png - ROC curves")
+    print("   4. clinical_distributions_consolidated_hd.png - Clinical distributions (CONSOLIDATED)")
+    print("   5. model_performance_parallel_hd.png - Performance parallel coordinates")
+    print("   6. prediction_confidence_distribution_hd.png - Confidence distributions (CONSOLIDATED)")
+    print("   7. feature_importance_comparison_hd.png - Feature importance comparison (CONSOLIDATED)")
 
     print("\n🔍 FEATURE IMPORTANCE METHODS USED:")
     for model_name, importance_df in importance_data.items():
@@ -1138,7 +1353,8 @@ def main():
 
     print("\n✅ Key improvements implemented:")
     print("   • HD visualizations with Times New Roman font (600 DPI)")
-    print("   • Single comprehensive feature importance plot with distinct colors")
+    print("   • 3 CONSOLIDATED visualizations (clinical, confidence, feature importance)")
+    print("   • Parallel coordinates plot instead of radar chart")
     print("   • KNN overfitting reduced with higher n_neighbors (15-30)")
     print("   • Enhanced feature engineering with clinical ratios")
     print("   • Improved feature selection using combined methods")
