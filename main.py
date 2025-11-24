@@ -41,7 +41,6 @@ plt.rcParams.update({
     'savefig.pad_inches': 0.1
 })
 
-# Set style for better plots
 plt.style.use('default')
 sns.set_palette("husl")
 
