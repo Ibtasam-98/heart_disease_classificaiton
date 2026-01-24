@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.13 (heart_disease_classificaiton)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (heart_disease_classificaiton)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.9 (heart_disease_classificaiton)" project-jdk-type="Python SDK" />
 </project>
