@@ -343,7 +343,6 @@ def evaluate_model(model, X, y, dataset_name="Dataset"):
 
 
 def main():
-    """Main function"""
     # Setup
     torch.manual_seed(42)
     np.random.seed(42)
