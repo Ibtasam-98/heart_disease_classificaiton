@@ -351,10 +351,9 @@ def main():
     print("HEART DISEASE CLASSIFICATION USING CNN")
     print("=" * 80)
 
-    # Load and preprocess data
     df = load_heart_disease_data()
 
-    # Data summary
+    # Data
     data_summary = {
         'Total Samples': len(df),
         'Features': df.shape[1],
