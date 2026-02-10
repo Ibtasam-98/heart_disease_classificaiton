@@ -1,4 +1,4 @@
-# ❤️ Heart Disease Classification — CNN Pipeline with Feature Synthesis
+# Heart Disease Classification — CNN Pipeline with Feature Synthesis
 
 This repository contains the official implementation of our research work:
 
@@ -10,7 +10,7 @@ The included IEEE-format paper in this repository is the **official report** des
 
 ## 📄 Official Paper
 
-📎 **File:**  
+**File:**  
 `IEEE_CAI___Convolutional_Neural_Network_Pipeline_with_Feature_Synthesis_for_Cardiovascular_Risk_Prediction.pdf`
 
 This paper provides the complete technical details of:
@@ -25,7 +25,7 @@ This paper provides the complete technical details of:
 
 ---
 
-## 🧠 Project Overview
+## Project Overview
 
 This project presents a **Convolutional Neural Network (CNN) pipeline for heart disease classification** using structured clinical (tabular) data. The approach combines:
 
@@ -39,26 +39,26 @@ The goal is to build an accurate and computationally efficient model for **cardi
 
 ---
 
-## ⚙️ Pipeline Summary
+## Pipeline Summary
 
-### 🔹 Data Preprocessing
+### Data Preprocessing
 - Outlier detection using IQR
 - Outlier clipping instead of row removal
 - Feature standardization (z-score normalization)
 - Label encoding for categorical variables
 
-### 🔹 Feature Engineering
+### Feature Engineering
 Engineered features include:
 
 - `age_group` — age binning
 - `age_bp` — age × resting blood pressure
 - `chol_age` — cholesterol / age ratio
 
-### 🔹 Feature Selection
+### Feature Selection
 - ANOVA F-value ranking
 - Top 15 features selected for training
 
-### 🔹 Model
+### Model
 - 1D CNN for tabular data
 - 3 Conv1D layers + BatchNorm + MaxPooling
 - Fully connected layers with Dropout
@@ -66,7 +66,7 @@ Engineered features include:
 
 ---
 
-## 📊 Dataset
+## Dataset
 
 - Source: Kaggle Heart Disease Dataset
 - Samples: **1,025**
@@ -77,7 +77,7 @@ Engineered features include:
 
 ---
 
-## 🧪 Results (From Official Paper)
+## Results (From Official Paper)
 
 **Test Set Performance:**
 
@@ -97,4 +97,33 @@ Engineered features include:
 ---
 
 ## 📁 Repository Structure
+
+```text
+heart_disease_classificaiton/
+│
+├── dataset/        # Dataset files
+├── main.py         # Training & evaluation pipeline
+├── IEEE_*.pdf      # Official research paper
+└── README.md       # Project documentation
+```
+---
+
+## Citation
+If you use this repository or methodology in academic work, please cite the included paper.
+
+---
+
+## Authors
+
+- Ibtasam Ur Rehman  
+- Jibran K. Yousafzai  
+- Abdulraqeb Alhammadi  
+- Muhammad Ikram  
+- Maheen Ishfaq  
+---
+
+## Note
+
+This repository and its code correspond directly to the official experimental pipeline and results reported in the attached IEEE conference paper.
+
 
