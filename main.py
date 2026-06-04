@@ -19,7 +19,6 @@ warnings.filterwarnings('ignore')
 
 
 def load_heart_disease_data():
-    """Load the heart disease dataset"""
     df = pd.read_csv('dataset/heart.csv')
     return df
 
