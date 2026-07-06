@@ -1,8 +1,7 @@
 """
-Symptom-to-Disease Classification: BERT vs DistilBERT vs ALBERT
-================================================================
-A comprehensive comparison of three BERT variants for symptom-to-disease
-classification: BERT-base, DistilBERT, and ALBERT.
+Symptom-to-Disease Classification: BERT vs RoBERTa (Fixed Version)
+==========================================================================
+A comprehensive comparison with automatic fallback if models fail to download.
 """
 
 import os
@@ -17,7 +16,6 @@ import kagglehub
 import requests
 from datetime import datetime
 import warnings
-
 warnings.filterwarnings('ignore')
 
 from sklearn.model_selection import train_test_split
@@ -55,31 +53,21 @@ EPOCHS = 8
 BATCH_SIZE = 16
 LEARNING_RATE = 2e-5
 
-# Define models to compare - Added ALBERT
+# Define models to compare
 MODELS_TO_COMPARE = [
     {
         "name": "BERT-base",
         "model_name": "bert-base-uncased",
         "params": "110M",
         "description": "Original BERT trained on BooksCorpus and Wikipedia",
-        "color": "#3498db",
-        "type": "Standard"
+        "color": "#3498db"
     },
     {
         "name": "DistilBERT",
         "model_name": "distilbert-base-uncased",
         "params": "66M",
         "description": "Distilled BERT (40% smaller, 60% faster, 97% performance)",
-        "color": "#2ecc71",
-        "type": "Distilled"
-    },
-    {
-        "name": "ALBERT",
-        "model_name": "albert-base-v2",
-        "params": "12M",
-        "description": "A Lite BERT with parameter sharing (much smaller, efficient)",
-        "color": "#e67e22",
-        "type": "Lite"
+        "color": "#2ecc71"
     }
 ]
 
@@ -186,9 +174,9 @@ def evaluate_model(name, y_train, y_train_pred, y_test, y_test_pred, classes, y_
     train_acc = accuracy_score(y_train, y_train_pred)
     test_acc = accuracy_score(y_test, y_test_pred)
 
-    print(f"\n{'=' * 50}")
+    print(f"\n{'='*50}")
     print(f"{name} RESULTS")
-    print(f"{'=' * 50}")
+    print(f"{'='*50}")
     print(f"Train Accuracy: {train_acc:.4f}")
     print(f"Test Accuracy : {test_acc:.4f}")
 
@@ -196,18 +184,18 @@ def evaluate_model(name, y_train, y_train_pred, y_test, y_test_pred, classes, y_
     print("\nClassification Report:\n", report)
 
     report_dict = classification_report(y_test, y_test_pred, target_names=classes,
-                                        zero_division=0, output_dict=True)
+                                       zero_division=0, output_dict=True)
 
     safe_name = name.lower().replace("-", "_").replace(" ", "_")
     plot_confusion_matrix(y_test, y_test_pred, classes,
-                          f"{name} - Confusion Matrix",
-                          f"{safe_name}_confusion.png")
+                         f"{name} - Confusion Matrix",
+                         f"{safe_name}_confusion.png")
 
     macro_auc = None
     if y_test_probs is not None:
         macro_auc = plot_roc_auc(y_test, y_test_probs, classes,
-                                 f"{name} - ROC Curves",
-                                 f"{safe_name}_roc.png")
+                                f"{name} - ROC Curves",
+                                f"{safe_name}_roc.png")
 
     # Get per-class metrics
     per_class = {}
@@ -234,7 +222,7 @@ def evaluate_model(name, y_train, y_train_pred, y_test, y_test_pred, classes, y_
 
 
 # ==========================================================
-# MODEL TRAINING
+# BERT CLASSIFICATION TRAINING
 # ==========================================================
 
 class SymptomDataset(torch.utils.data.Dataset):
@@ -254,6 +242,7 @@ class SymptomDataset(torch.utils.data.Dataset):
 def load_model_safe(model_name, num_labels):
     """Load model with safe parameter handling"""
     try:
+        # First try without timeout parameter
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         model = AutoModelForSequenceClassification.from_pretrained(
             model_name,
@@ -271,13 +260,12 @@ def train_model(X_train, X_test, y_train, y_test, classes, model_config):
     model_name = model_config["model_name"]
     model_key = model_config["name"]
 
-    print(f"\n{'#' * 60}")
+    print(f"\n{'#'*60}")
     print(f"Training {model_key}")
     print(f"Model: {model_name}")
     print(f"Parameters: {model_config['params']}")
-    print(f"Type: {model_config['type']}")
     print(f"Description: {model_config['description']}")
-    print(f"{'#' * 60}")
+    print(f"{'#'*60}")
 
     start_time = time.time()
 
@@ -287,8 +275,19 @@ def train_model(X_train, X_test, y_train, y_test, classes, model_config):
         print(f"  ✅ Successfully loaded {model_name}")
     except Exception as e:
         print(f"  ❌ Failed to load {model_name}: {e}")
-        print(f"  ⚠️  Skipping {model_key}")
-        raise
+        # Try alternative: DistilBERT as fallback
+        print(f"  🔄 Trying fallback: distilbert-base-uncased")
+        try:
+            tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+            model = AutoModelForSequenceClassification.from_pretrained(
+                "distilbert-base-uncased",
+                num_labels=len(classes)
+            ).to(DEVICE)
+            model_key = f"{model_key} (using DistilBERT)"
+            print(f"  ✅ Successfully loaded fallback")
+        except Exception as e2:
+            print(f"  ❌ Fallback also failed: {e2}")
+            raise
 
     # Tokenize
     print(f"  Tokenizing training data...")
@@ -368,7 +367,7 @@ def train_model(X_train, X_test, y_train, y_test, classes, model_config):
 
     TRAINED_MODELS.append(model_key)
 
-    print(f"\n✅ {model_key} training completed in {training_time / 60:.2f} minutes")
+    print(f"\n✅ {model_key} training completed in {training_time/60:.2f} minutes")
 
     return model, tokenizer, trainer
 
@@ -386,18 +385,19 @@ def plot_comprehensive_comparison():
     df = pd.DataFrame(RESULTS).T
     df.to_csv(os.path.join(OUTPUT_DIR, "comparison_summary.csv"))
 
-    print("\n" + "=" * 50)
+    print("\n" + "="*50)
     print("COMPARISON SUMMARY")
-    print("=" * 50)
-    print(df[["test_accuracy", "macro_f1", "weighted_f1", "macro_auc"]].to_string())
+    print("="*50)
+    print(df.to_string())
 
     # Figure 1: Main Performance Metrics
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
     # 1. Bar chart comparison
     metrics = ["test_accuracy", "macro_f1", "weighted_f1"]
     colors = []
     for idx in df.index:
+        # Try to find color from config
         color = None
         for config in MODELS_TO_COMPARE:
             if config["name"] in idx:
@@ -413,7 +413,7 @@ def plot_comprehensive_comparison():
     axes[0, 0].grid(True, alpha=0.3)
     axes[0, 0].set_xticklabels(df.index, rotation=45)
 
-    # 2. Per-class F1 comparison
+    # 2. Per-class F1 comparison (if we have at least 2 models)
     if len(TRAINED_MODELS) >= 2:
         classes = list(RESULTS[TRAINED_MODELS[0]]["per_class"].keys())
 
@@ -421,9 +421,10 @@ def plot_comprehensive_comparison():
         x = np.arange(len(classes))
         width = 0.8 / len(TRAINED_MODELS)
 
-        for i, model_name in enumerate(TRAINED_MODELS[:4]):
+        for i, model_name in enumerate(TRAINED_MODELS[:3]):  # Max 3 models for clarity
             f1_scores = [RESULTS[model_name]["per_class"][cls]["f1"] for cls in classes]
-            offset = (i - (len(TRAINED_MODELS) - 1) / 2) * width
+            offset = (i - (len(TRAINED_MODELS)-1)/2) * width
+            # Get color from config
             color = None
             for config in MODELS_TO_COMPARE:
                 if config["name"] in model_name:
@@ -435,42 +436,12 @@ def plot_comprehensive_comparison():
         axes[0, 1].set_xlabel("Disease Classes", fontsize=12)
         axes[0, 1].set_ylabel("F1 Score", fontsize=12)
         axes[0, 1].set_xticks(x)
-        axes[0, 1].set_xticklabels(classes, rotation=90, fontsize=7)
+        axes[0, 1].set_xticklabels(classes, rotation=90, fontsize=8)
         axes[0, 1].legend()
         axes[0, 1].set_ylim(0, 1)
         axes[0, 1].grid(True, alpha=0.3)
 
-    # 3. Model Size vs Performance
-    if len(TRAINED_MODELS) >= 2:
-        sizes = []
-        accuracies = []
-        names = []
-        colors = []
-
-        for model_name in TRAINED_MODELS:
-            for config in MODELS_TO_COMPARE:
-                if config["name"] in model_name:
-                    params = config["params"]
-                    if 'M' in params:
-                        size = float(params.replace('M', ''))
-                    else:
-                        size = 110  # Default
-                    sizes.append(size)
-                    accuracies.append(RESULTS[model_name]["test_accuracy"] * 100)
-                    names.append(model_name)
-                    colors.append(config["color"])
-                    break
-
-        axes[0, 2].scatter(sizes, accuracies, s=200, c=colors, alpha=0.7)
-        for i, name in enumerate(names):
-            axes[0, 2].annotate(name, (sizes[i], accuracies[i]),
-                                xytext=(5, 5), textcoords='offset points', fontsize=9)
-        axes[0, 2].set_title("Model Size vs Performance", fontsize=14)
-        axes[0, 2].set_xlabel("Model Size (Millions of Parameters)", fontsize=12)
-        axes[0, 2].set_ylabel("Test Accuracy (%)", fontsize=12)
-        axes[0, 2].grid(True, alpha=0.3)
-
-    # 4. Training time comparison
+    # 3. Training time comparison
     if TRAINING_TIMES:
         models = list(TRAINING_TIMES.keys())
         times = [TRAINING_TIMES[m] for m in models]
@@ -486,36 +457,13 @@ def plot_comprehensive_comparison():
         axes[1, 0].set_title("Training Time Comparison", fontsize=14)
         axes[1, 0].set_ylabel("Training Time (seconds)", fontsize=12)
         axes[1, 0].grid(True, alpha=0.3)
-        axes[1, 0].set_xticklabels(models, rotation=45)
 
         # Add values on bars
         for i, v in enumerate(times):
-            axes[1, 0].text(i, v + 5, f"{v / 60:.1f} min", ha="center")
+            axes[1, 0].text(i, v + 5, f"{v/60:.1f} min", ha="center")
 
-    # 5. Performance vs Training Time
-    if len(TRAINED_MODELS) >= 2:
-        times = [TRAINING_TIMES[m] for m in TRAINED_MODELS]
-        accuracies = [RESULTS[m]["test_accuracy"] * 100 for m in TRAINED_MODELS]
-        colors = []
-        for m in TRAINED_MODELS:
-            color = None
-            for config in MODELS_TO_COMPARE:
-                if config["name"] in m:
-                    color = config["color"]
-                    break
-            colors.append(color if color else "#95a5a6")
-
-        axes[1, 1].scatter(times, accuracies, s=200, c=colors, alpha=0.7)
-        for i, name in enumerate(TRAINED_MODELS):
-            axes[1, 1].annotate(name, (times[i], accuracies[i]),
-                                xytext=(5, 5), textcoords='offset points', fontsize=9)
-        axes[1, 1].set_title("Training Time vs Performance", fontsize=14)
-        axes[1, 1].set_xlabel("Training Time (seconds)", fontsize=12)
-        axes[1, 1].set_ylabel("Test Accuracy (%)", fontsize=12)
-        axes[1, 1].grid(True, alpha=0.3)
-
-    # 6. Summary text
-    summary_text = "MODEL COMPARISON SUMMARY\n" + "=" * 30 + "\n\n"
+    # 4. Summary text
+    summary_text = "MODEL COMPARISON SUMMARY\n" + "="*30 + "\n\n"
     for model_name in TRAINED_MODELS:
         if model_name in RESULTS:
             r = RESULTS[model_name]
@@ -525,26 +473,21 @@ def plot_comprehensive_comparison():
             if r['macro_auc']:
                 summary_text += f"  • Macro AUC: {r['macro_auc']:.2%}\n"
             if model_name in TRAINING_TIMES:
-                summary_text += f"  • Training Time: {TRAINING_TIMES[model_name] / 60:.1f} min\n"
-            # Add model info
-            for config in MODELS_TO_COMPARE:
-                if config["name"] in model_name:
-                    summary_text += f"  • Parameters: {config['params']}\n"
-                    break
+                summary_text += f"  • Training Time: {TRAINING_TIMES[model_name]/60:.1f} min\n"
             summary_text += "\n"
 
     # Find best model
     if TRAINED_MODELS:
         best_model = max(TRAINED_MODELS, key=lambda x: RESULTS.get(x, {}).get("test_accuracy", 0))
-        best_acc = RESULTS[best_model]["test_accuracy"]
-        summary_text += f"🏆 BEST MODEL: {best_model}\n"
-        summary_text += f"   Accuracy: {best_acc:.2%}"
+        if best_model in RESULTS:
+            summary_text += f"🏆 BEST MODEL: {best_model}\n"
+            summary_text += f"   Accuracy: {RESULTS[best_model]['test_accuracy']:.2%}"
 
-    axes[1, 2].text(0.1, 0.5, summary_text, transform=axes[1, 2].transAxes,
-                    fontsize=9, verticalalignment='center',
-                    bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.5))
-    axes[1, 2].set_title("Summary", fontsize=14)
-    axes[1, 2].axis('off')
+    axes[1, 1].text(0.1, 0.5, summary_text, transform=axes[1, 1].transAxes,
+                   fontsize=10, verticalalignment='center',
+                   bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.5))
+    axes[1, 1].set_title("Summary", fontsize=14)
+    axes[1, 1].axis('off')
 
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, "comprehensive_comparison.png"), dpi=150)
@@ -558,86 +501,34 @@ def print_detailed_analysis():
         print("\n⚠️ No models trained for analysis")
         return
 
-    print("\n" + "=" * 80)
-    print("DETAILED ANALYSIS: BERT vs DistilBERT vs ALBERT")
-    print("=" * 80)
+    print("\n" + "="*80)
+    print("DETAILED ANALYSIS")
+    print("="*80)
 
     # Overall performance
     print(f"\n📊 OVERALL PERFORMANCE:")
-    print(f"  {'Model':<20} {'Type':<12} {'Params':<10} {'Test Acc':<12} {'Macro F1':<12} {'Time (min)':<12}")
-    print(f"  {'-' * 85}")
+    print(f"  {'Model':<30} {'Test Acc':<12} {'Macro F1':<12} {'Weighted F1':<12} {'Time (min)':<12}")
+    print(f"  {'-'*80}")
 
     for model_name in TRAINED_MODELS:
         if model_name in RESULTS:
             r = RESULTS[model_name]
             time_min = TRAINING_TIMES.get(model_name, 0) / 60
-            # Get model info
-            model_type = ""
-            params = ""
-            for config in MODELS_TO_COMPARE:
-                if config["name"] in model_name:
-                    model_type = config["type"]
-                    params = config["params"]
-                    break
-            print(
-                f"  {model_name:<20} {model_type:<12} {params:<10} {r['test_accuracy'] * 100:>6.2f}%    {r['macro_f1'] * 100:>6.2f}%    {time_min:>8.1f}")
-
-    # Find best and worst performers
-    if len(TRAINED_MODELS) >= 2:
-        best_model = max(TRAINED_MODELS, key=lambda x: RESULTS.get(x, {}).get("test_accuracy", 0))
-        best_acc = RESULTS[best_model]["test_accuracy"]
-        fastest_model = min(TRAINED_MODELS, key=lambda x: TRAINING_TIMES.get(x, float('inf')))
-        fastest_time = TRAINING_TIMES.get(fastest_model, 0)
-
-        print(f"\n🏆 Best Accuracy: {best_model} ({best_acc:.2%})")
-        print(f"⚡ Fastest Training: {fastest_model} ({fastest_time / 60:.1f} min)")
-
-        # Model type comparison
-        print(f"\n📊 MODEL TYPE COMPARISON:")
-        for model_name in TRAINED_MODELS:
-            for config in MODELS_TO_COMPARE:
-                if config["name"] in model_name:
-                    print(
-                        f"  • {config['type']} ({config['params']}): {RESULTS[model_name]['test_accuracy']:.2%} accuracy, {TRAINING_TIMES.get(model_name, 0) / 60:.1f} min")
-                    break
-
-        # Classes where each model excels
-        print(f"\n📈 PER-CLASS PERFORMANCE:")
-        for model_name in TRAINED_MODELS[:2]:  # Show for top 2 models
-            if model_name in RESULTS:
-                classes = list(RESULTS[model_name]["per_class"].keys())
-                high_performers = []
-                low_performers = []
-
-                for cls in classes:
-                    f1 = RESULTS[model_name]["per_class"][cls]["f1"]
-                    if f1 >= 0.95:
-                        high_performers.append(cls)
-                    elif f1 <= 0.7:
-                        low_performers.append(cls)
-
-                if high_performers:
-                    print(f"\n✅ {model_name} excels on: {', '.join(high_performers[:5])}")
-                if low_performers:
-                    print(f"⚠️  {model_name} struggles with: {', '.join(low_performers[:5])}")
+            print(f"  {model_name:<30} {r['test_accuracy']*100:>6.2f}%    {r['macro_f1']*100:>6.2f}%    {r['weighted_f1']*100:>6.2f}%    {time_min:>8.1f}")
 
     print(f"\n💡 KEY INSIGHTS:")
     print("""
-    1. Model Size vs Performance Trade-off:
-       • BERT-base: 110M params, highest accuracy
-       • DistilBERT: 66M params (40% smaller), ~97% of BERT's performance
-       • ALBERT: 12M params (89% smaller), efficient but potentially lower accuracy
-
-    2. Speed vs Accuracy:
-       • BERT-base: Best accuracy, longest training
-       • DistilBERT: Good balance of speed and accuracy
-       • ALBERT: Fastest training, smallest model size
-
+    1. Model Comparison:
+       • BERT-base: Standard BERT with 110M parameters
+       • DistilBERT: Distilled version (40% smaller, 60% faster)
+    
+    2. Speed vs Accuracy Trade-off:
+       • DistilBERT trains faster but may have slightly lower accuracy
+       • BERT-base may achieve better accuracy but takes longer
+    
     3. Practical Recommendations:
-       • For maximum accuracy: Use BERT-base
-       • For production/deployment: Use DistilBERT (best balance)
-       • For resource-constrained environments: Use ALBERT
-       • For mobile/edge devices: ALBERT is ideal
+       • Use BERT-base for maximum accuracy
+       • Use DistilBERT for production/deployment (speed + good accuracy)
     """)
 
 
@@ -660,7 +551,7 @@ def predict(model_key, text, model_dir=OUTPUT_DIR):
 
     model.eval()
     inputs = tokenizer(text, truncation=True, padding=True,
-                       max_length=MAX_LEN, return_tensors="pt").to(DEVICE)
+                      max_length=MAX_LEN, return_tensors="pt").to(DEVICE)
 
     with torch.no_grad():
         logits = model(**inputs).logits
@@ -682,9 +573,9 @@ def predict(model_key, text, model_dir=OUTPUT_DIR):
 # ==========================================================
 
 def main():
-    print("=" * 80)
-    print("SYMPTOM-TO-DISEASE CLASSIFICATION: BERT vs DistilBERT vs ALBERT")
-    print("=" * 80)
+    print("="*80)
+    print("SYMPTOM-TO-DISEASE CLASSIFICATION: BERT vs DistilBERT")
+    print("="*80)
     print(f"Device: {DEVICE}")
     print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -708,9 +599,9 @@ def main():
 
     # Train models
     for model_config in MODELS_TO_COMPARE:
-        print(f"\n{'=' * 80}")
+        print(f"\n{'='*80}")
         print(f"Training: {model_config['name']}")
-        print(f"{'=' * 80}")
+        print(f"{'='*80}")
 
         try:
             model, tokenizer, trainer = train_model(
@@ -725,17 +616,17 @@ def main():
         return
 
     # Visualize and analyze
-    print("\n" + "=" * 80)
+    print("\n" + "="*80)
     print("VISUALIZING RESULTS")
-    print("=" * 80)
+    print("="*80)
     plot_comprehensive_comparison()
     print_detailed_analysis()
 
     # Test inference with sample
     sample = "I have severe headache, nausea, and sensitivity to light"
-    print("\n" + "=" * 80)
+    print("\n" + "="*80)
     print("🔍 SAMPLE INFERENCE - TOP 5 PREDICTIONS")
-    print("=" * 80)
+    print("="*80)
     print(f"Input: {sample}\n")
 
     for model_name in TRAINED_MODELS[:3]:
@@ -744,14 +635,14 @@ def main():
             print(f"{model_name}:")
             for i, (disease, conf) in enumerate(predictions, 1):
                 bar = "█" * int(conf * 40)
-                print(f"  {i}. {disease:25} {conf * 100:5.1f}% {bar}")
+                print(f"  {i}. {disease:25} {conf*100:5.1f}% {bar}")
             print()
 
-    print("\n" + "=" * 80)
+    print("\n" + "="*80)
     print("✅ COMPARISON COMPLETE!")
     print(f"📁 Results saved to '{OUTPUT_DIR}/' directory")
     print(f"📊 Models trained: {', '.join(TRAINED_MODELS)}")
-    print("=" * 80)
+    print("="*80)
 
 
 if __name__ == "__main__":
